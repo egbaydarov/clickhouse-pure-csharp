@@ -1,0 +1,5 @@
+﻿<Solution>
+  <Project Path="Clickhouse.Pure.ColumnCodeGenerator\Clickhouse.Pure.ColumnCodeGenerator.csproj" Type="Classic C#" />
+  <Project Path="Clickhouse.Pure.Grpc\Clickhouse.Pure.Grpc.csproj" Type="Classic C#" />
+  <Project Path="Clickhouse.Pure.RoslynGenerator\Clickhouse.Pure.RoslynGenerator.csproj" Type="Classic C#" />
+</Solution>

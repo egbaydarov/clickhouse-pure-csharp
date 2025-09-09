@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <Protobuf Include="./Proto/clickhouse_grpc.proto" GrpcServices="Client" Link="Proto/clickhouse_grpc.proto" />
+        <PackageReference Include="Google.Protobuf" Version="3.32.0" />
+        <PackageReference Include="Grpc.Net.Client" Version="2.71.0" />
+        <PackageReference Include="Grpc.Tools" PrivateAssets="All" Version="2.72.0" />
+    </ItemGroup>
+    <ItemGroup>
+      <ProjectReference Include="..\Clickhouse.Pure.ColumnCodeGenerator\Clickhouse.Pure.ColumnCodeGenerator.csproj" />
+    </ItemGroup>
+</Project>

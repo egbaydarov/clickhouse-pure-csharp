@@ -1,0 +1,94 @@
+#nullable enable
+using System.Buffers.Binary;
+using System.Net;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace Clickhouse.Pure.ColumnCodeGenerator;
+
+public partial class NativeFormatBlockReader
+{
+    {{~ for n in NumericTypes ~}}
+    public {{ n.ClickhouseType }}ColumnReader Advance{{ n.ClickhouseType }}Column()
+    {
+        if (_columnsRead >= _columnsCount)
+        {
+            throw new InvalidOperationException("No more columns available in this block.");
+        }
+ 
+        // header
+        var name = ReadHeaderString();
+        var type = ReadHeaderString();
+        _columnsRead++;
+        if (!MatchesType(type, "{{ n.ClickhouseType }}"u8))
+        {
+            throw new InvalidOperationException($"Column type mismatch. Expected {{ n.ClickhouseType }} for column {Encoding.UTF8.GetString(name)}, but got '{Encoding.UTF8.GetString(type)}'.");
+        }
+
+        return {{ n.ClickhouseType }}ColumnReader.CreateAndAdvance(_buffer.Span, ref _offset, (int)_rowsCount);
+    }
+
+    public ref struct {{ n.ClickhouseType }}ColumnReader : ISequentialColumnReader<{{ n.CsharpType }}>
+    {
+        private readonly int _rows;
+
+        private readonly ReadOnlySpan<byte> _data;
+        private int _offset;
+        private int _index;
+
+        private {{ n.ClickhouseType }}ColumnReader(
+            ReadOnlySpan<byte> data,
+            int startOffset,
+            int rows)
+        {
+            _rows = rows;
+            _data = data;
+            _offset = startOffset;
+
+            _index = 0;
+        }
+
+        public static {{ n.ClickhouseType }}ColumnReader CreateAndAdvance(
+            ReadOnlySpan<byte> data,
+            scoped ref int offset,
+            int rows)
+        {
+            var start = offset;
+            var total = (long)rows * {{ n.ValueSizeInBytes }};
+
+            if (total < 0 || start + total > data.Length)
+            {
+                throw new IndexOutOfRangeException("Float64 column out of range");
+            }
+
+            // advance offset by ref
+            offset = start + (int)total;
+
+            return new {{ n.ClickhouseType }}ColumnReader(data, start, rows);
+        }
+
+        public int Length => _rows;
+
+        public bool HasMoreRows() => _index < _rows;
+
+        public {{ n.CsharpType }} GetCellValueAndAdvance()
+        {
+            if (_index >= _rows)
+            {
+                throw new IndexOutOfRangeException("No more values");
+            }
+
+            _index++;
+            if (_offset + {{ n.ValueSizeInBytes }} > _data.Length)
+            {
+                throw new IndexOutOfRangeException("{{ n.ClickhouseType }} value out of range");
+            }
+
+            var v = {{ n.SpanInterpretFunction }}(_data.Slice(_offset, {{ n.ValueSizeInBytes }}));
+            _offset += {{ n.ValueSizeInBytes }};
+            return v;
+        }
+    }
+    {{~ end ~}}
+}

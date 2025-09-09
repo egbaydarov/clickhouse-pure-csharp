@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateFullPaths>true</GenerateFullPaths>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+  <PropertyGroup>
+     <TargetFramework>net9.0</TargetFramework>
+     <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
