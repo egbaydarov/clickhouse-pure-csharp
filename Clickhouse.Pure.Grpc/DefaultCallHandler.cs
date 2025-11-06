@@ -1,7 +1,5 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.InteropServices;
-using System.Security;
 using System.Text;
 using System.Threading.Tasks;
 using Google.Protobuf;
@@ -13,24 +11,24 @@ public sealed class DefaultCallHandler
 {
     private readonly ClickHouseGrpcRouter _router;
     private readonly QueryInfo _baseQueryInfo;
+    private readonly TimeSpan _defaultTimeout;
     
-    public static readonly ReadOnlyMemory<byte> InputDataDelimiter = new byte[]{ 0x1d }; // ascii group separator 
-
     public DefaultCallHandler(
         ClickHouseGrpcRouter router,
-        SecureString password,
-        SecureString username,
+        string password,
+        string username, TimeSpan defaultTimeout,
         int compressionLevel = 3,
         string compression = "gzip")
     {
         _baseQueryInfo = new QueryInfo()
         {
-            UserName = Marshal.PtrToStringUni(Marshal.SecureStringToGlobalAllocUnicode(username)),
-            Password = Marshal.PtrToStringUni(Marshal.SecureStringToGlobalAllocUnicode(password)),
+            UserName = username,
+            Password = password,
             TransportCompressionLevel = compressionLevel,
             TransportCompressionType = compression
         };
         _router = router;
+        _defaultTimeout = defaultTimeout;
     }
 
     public async Task<BulkWriter> InputBulk(
@@ -42,6 +40,7 @@ public sealed class DefaultCallHandler
             {
                 var result = client
                     .ExecuteQueryWithStreamInput(
+                        deadline: DateTime.UtcNow.Add(_defaultTimeout),
                         cancellationToken: ct);
 
                 await result.RequestStream.WriteAsync(
@@ -91,7 +90,10 @@ public sealed class DefaultCallHandler
                 };
 
                 var result = client
-                    .ExecuteQuery(queryInfo, cancellationToken: ct);
+                    .ExecuteQuery(
+                        request: queryInfo,
+                        cancellationToken: ct,
+                        deadline: DateTime.UtcNow.Add(_defaultTimeout));
 
                 return Task.FromResult(result);
             },
@@ -138,9 +140,12 @@ public sealed class DefaultCallHandler
                 };
 
                 var result = client
-                    .ExecuteQuery(queryInfo, cancellationToken: ct);
+                    .ExecuteQuery(
+                        request: queryInfo,
+                        deadline: DateTime.UtcNow.Add(value: _defaultTimeout),
+                        cancellationToken: ct);
 
-                return Task.FromResult(result);
+                return Task.FromResult(result: result);
             },
             logHandler: Console.WriteLine);
 
@@ -152,7 +157,7 @@ public sealed class DefaultCallHandler
         }
         catch (System.Exception ex)
         {
-            return (null, new RpcException(new Status(
+            return (null, new RpcException(status: new Status(
                 statusCode: StatusCode.Unavailable,
                 detail: "Exception on query initiation",
                 debugException: ex)));
@@ -178,6 +183,7 @@ public sealed class DefaultCallHandler
 
                 var result = client
                     .ExecuteQueryWithStreamOutput(
+                        deadline: DateTime.UtcNow.Add(_defaultTimeout),
                         request: queryInfo);
 
                 return Task.FromResult(result);

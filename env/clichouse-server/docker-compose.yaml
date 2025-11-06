@@ -1,0 +1,119 @@
+version: "3.9"
+
+services:
+  zookeeper:
+    image: zookeeper
+    container_name: clickhouse-zookeeper
+    restart: unless-stopped
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+      ZOO_PORT_NUMBER: 2181
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD-SHELL", "/apache-zookeeper-3.9.4-bin/bin/zkServer.sh status"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+    networks:
+      - clickhouse-net
+
+  clickhouse-1:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: clickhouse-1
+    hostname: clickhouse-1
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+      - "9100:9100"
+    volumes:
+      - clickhouse1-data:/var/lib/clickhouse
+      - ./config/common/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml:ro
+      - ./config/common/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml:ro
+      - ./config/common/grpc.xml:/etc/clickhouse-server/config.d/grpc.xml:ro
+      - ./config/node1/macros.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user=default", "--password=default", "--query=SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - clickhouse-net
+
+  clickhouse-2:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: clickhouse-2
+    hostname: clickhouse-2
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    ports:
+      - "8124:8123"
+      - "9001:9000"
+      - "9101:9100"
+    volumes:
+      - clickhouse2-data:/var/lib/clickhouse
+      - ./config/common/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml:ro
+      - ./config/common/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml:ro
+      - ./config/common/grpc.xml:/etc/clickhouse-server/config.d/grpc.xml:ro
+      - ./config/node2/macros.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user=default", "--password=default", "--query=SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - clickhouse-net
+
+  clickhouse-3:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: clickhouse-3
+    hostname: clickhouse-3
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    ports:
+      - "8125:8123"
+      - "9002:9000"
+      - "9102:9100"
+    volumes:
+      - clickhouse3-data:/var/lib/clickhouse
+      - ./config/common/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml:ro
+      - ./config/common/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml:ro
+      - ./config/common/grpc.xml:/etc/clickhouse-server/config.d/grpc.xml:ro
+      - ./config/node3/macros.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user=default", "--password=default", "--query=SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - clickhouse-net
+
+networks:
+  clickhouse-net:
+    driver: bridge
+
+volumes:
+  clickhouse1-data:
+  clickhouse2-data:
+  clickhouse3-data:
+

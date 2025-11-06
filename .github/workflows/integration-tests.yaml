@@ -1,0 +1,90 @@
+name: Integration Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Start ClickHouse Cluster
+        run: |
+          docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci up -d
+
+      - name: Wait for ClickHouse nodes
+        run: |
+          for port in 8123 8124 8125; do
+            echo "Waiting for ClickHouse node on port ${port}"
+            timeout 180 bash -c "until curl -fsS http://localhost:${port}/ping; do sleep 2; done"
+          done
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Install ReportGenerator
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool || \
+          dotnet tool update --global dotnet-reportgenerator-globaltool
+
+      - name: Add .NET tools to PATH
+        run: echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Run tests with coverage
+        run: dotnet test --configuration Release --no-restore /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=TestResults/coverage/
+
+      - name: Generate coverage report
+        if: success()
+        run: reportgenerator -reports:TestResults/coverage/coverage.cobertura.xml -targetdir:coverage-report -reporttypes:Html
+
+      - name: Upload coverage report artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: coverage-report
+
+      - name: Capture Docker logs on failure
+        if: failure()
+        run: docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci logs
+
+      - name: Stop ClickHouse Cluster
+        if: always()
+        run: docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci down -v
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+

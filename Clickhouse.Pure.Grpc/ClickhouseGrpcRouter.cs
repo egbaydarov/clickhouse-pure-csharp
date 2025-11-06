@@ -196,7 +196,10 @@ public sealed class ClickHouseGrpcRouter : IDisposable
             password: password);
 
         // default advertised hostname for local setup
-        if (discovered is ["http://::1:9100"])
+        // TODO: find better approach
+        if (
+            discovered is ["http://::1:9100"] ||
+            discovered.Contains("http://127.0.0.1:9100"))
         {
             discovered = ["http://127.0.0.1:9100"];
         }
