@@ -57,7 +57,7 @@ jobs:
 
       - name: Generate coverage report
         if: success()
-        run: reportgenerator -reports:TestResults/coverage/coverage.cobertura.xml -targetdir:coverage-report -reporttypes:Html
+        run: reportgenerator -reports:"**/coverage.cobertura.xml" -targetdir:coverage-report -reporttypes:Html
 
       - name: Upload coverage report artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
