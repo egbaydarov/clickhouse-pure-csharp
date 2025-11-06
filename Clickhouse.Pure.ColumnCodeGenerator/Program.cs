@@ -23,8 +23,13 @@ internal static class Program
                 {
                     ClickhouseType = "Date32",
                     CsharpType = "DateOnly",
-                    SpanInterpretFunction = "DateOnlyExt.From1900_01_01Days",
-                    ValueSizeInBytes = 4
+                    SpanInterpretFunction = "DateOnlyExt.From1970_01_01DaysInt32",
+                    ValueSizeInBytes = 4,
+                    WriterValueStatements = new[]
+                    {
+                        "var days = value.DayNumber - 719162;",
+                        "BinaryPrimitives.WriteInt32LittleEndian(dest, days);"
+                    }
                 },
                 // IPAddresses
                 new NumericColumnVariant
@@ -32,14 +37,30 @@ internal static class Program
                     ClickhouseType = "Date",
                     CsharpType = "DateOnly",
                     SpanInterpretFunction = "DateOnlyExt.From1970_01_01Days",
-                    ValueSizeInBytes = 2
+                    ValueSizeInBytes = 2,
+                    WriterValueStatements = new[]
+                    {
+                        "var days = value.DayNumber - 719162;",
+                        "if ((uint)days > ushort.MaxValue)",
+                        "{",
+                        "    throw new ArgumentOutOfRangeException(nameof(value), \"DateOnly is outside of ClickHouse Date range (1970-01-01..2106-02-07).\");",
+                        "}",
+                        "BinaryPrimitives.WriteUInt16LittleEndian(dest, (ushort)days);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "IPv4",
                     CsharpType = "IPAddress",
                     SpanInterpretFunction = "new IPAddress",
-                    ValueSizeInBytes = 4 
+                    ValueSizeInBytes = 4,
+                    WriterValueStatements = new[]
+                    {
+                        "if (!value.TryWriteBytes(dest, out var written) || written != 4)",
+                        "{",
+                        "    throw new InvalidOperationException(\"Failed to write IPv4 address bytes.\");",
+                        "}"
+                    }
                 },
 
                 // Bool (same as UInt8)
@@ -48,7 +69,11 @@ internal static class Program
                     ClickhouseType = "Bool",
                     CsharpType = "bool",
                     SpanInterpretFunction = "MemoryMarshal.Read<bool>",
-                    ValueSizeInBytes = 1
+                    ValueSizeInBytes = 1,
+                    WriterValueStatements = new[]
+                    {
+                        "dest[0] = value ? (byte)1 : (byte)0;"
+                    }
                 },
 
                 // Unsigned ints
@@ -57,35 +82,55 @@ internal static class Program
                     ClickhouseType = "UInt8",
                     CsharpType = "byte",
                     SpanInterpretFunction = "MemoryMarshal.Read<byte>",
-                    ValueSizeInBytes = 1
+                    ValueSizeInBytes = 1,
+                    WriterValueStatements = new[]
+                    {
+                        "dest[0] = value;"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "UInt16",
                     CsharpType = "ushort",
                     SpanInterpretFunction = "BinaryPrimitives.ReadUInt16LittleEndian",
-                    ValueSizeInBytes = 2
+                    ValueSizeInBytes = 2,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteUInt16LittleEndian(dest, value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "UInt32",
                     CsharpType = "uint",
                     SpanInterpretFunction = "BinaryPrimitives.ReadUInt32LittleEndian",
-                    ValueSizeInBytes = 4
+                    ValueSizeInBytes = 4,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteUInt32LittleEndian(dest, value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "UInt64",
                     CsharpType = "ulong",
                     SpanInterpretFunction = "BinaryPrimitives.ReadUInt64LittleEndian",
-                    ValueSizeInBytes = 8
+                    ValueSizeInBytes = 8,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteUInt64LittleEndian(dest, value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "UInt128",
                     CsharpType = "UInt128",
                     SpanInterpretFunction = "BinaryPrimitives.ReadUInt128LittleEndian",
-                    ValueSizeInBytes = 16
+                    ValueSizeInBytes = 16,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteUInt128LittleEndian(dest, value);"
+                    }
                 },
 
                 // Signed ints
@@ -94,35 +139,55 @@ internal static class Program
                     ClickhouseType = "Int8",
                     CsharpType = "sbyte",
                     SpanInterpretFunction = "MemoryMarshal.Read<sbyte>",
-                    ValueSizeInBytes = 1
+                    ValueSizeInBytes = 1,
+                    WriterValueStatements = new[]
+                    {
+                        "dest[0] = unchecked((byte)value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "Int16",
                     CsharpType = "short",
                     SpanInterpretFunction = "BinaryPrimitives.ReadInt16LittleEndian",
-                    ValueSizeInBytes = 2
+                    ValueSizeInBytes = 2,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteInt16LittleEndian(dest, value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "Int32",
                     CsharpType = "int",
                     SpanInterpretFunction = "BinaryPrimitives.ReadInt32LittleEndian",
-                    ValueSizeInBytes = 4
+                    ValueSizeInBytes = 4,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteInt32LittleEndian(dest, value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "Int64",
                     CsharpType = "long",
                     SpanInterpretFunction = "BinaryPrimitives.ReadInt64LittleEndian",
-                    ValueSizeInBytes = 8
+                    ValueSizeInBytes = 8,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteInt64LittleEndian(dest, value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "Int128",
                     CsharpType = "Int128",
                     SpanInterpretFunction = "BinaryPrimitives.ReadInt128LittleEndian",
-                    ValueSizeInBytes = 16
+                    ValueSizeInBytes = 16,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteInt128LittleEndian(dest, value);"
+                    }
                 },
 
                 // Floating
@@ -131,14 +196,22 @@ internal static class Program
                     ClickhouseType = "Float32",
                     CsharpType = "float",
                     SpanInterpretFunction = "BinaryPrimitives.ReadSingleLittleEndian",
-                    ValueSizeInBytes = 4
+                    ValueSizeInBytes = 4,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteSingleLittleEndian(dest, value);"
+                    }
                 },
                 new NumericColumnVariant
                 {
                     ClickhouseType = "Float64",
                     CsharpType = "double",
                     SpanInterpretFunction = "BinaryPrimitives.ReadDoubleLittleEndian",
-                    ValueSizeInBytes = 8
+                    ValueSizeInBytes = 8,
+                    WriterValueStatements = new[]
+                    {
+                        "BinaryPrimitives.WriteDoubleLittleEndian(dest, value);"
+                    }
                 }
             };
 

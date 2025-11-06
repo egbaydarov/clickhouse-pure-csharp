@@ -1,10 +1,5 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Text;
-using Clickhouse.Pure.ColumnCodeGenerator;
-using Grpc.Core;
 
 namespace Clickhouse.Pure.Grpc.Tests;
 
@@ -74,7 +69,8 @@ public class Sut
             throw new ArgumentException("At least one value is required", nameof(values));
         }
 
-        var bulkWriter = await _handler.InputBulk($"INSERT INTO {tableName} FORMAT CSV", "\n");
+        var bulkWriter = await _handler.InputBulk(
+            $"INSERT INTO {tableName} FORMAT CSV", "\n");
 
         try
         {
@@ -110,7 +106,7 @@ public class Sut
         if (result == null
             || result.Output.IsEmpty)
         {
-            return Array.Empty<uint>();
+            return [];
         }
 
         var payload = Encoding.UTF8.GetString(result.Output.Span);
@@ -132,7 +128,81 @@ public class Sut
         }
     }
 
-    public async Task<IReadOnlyList<ulong>> ReadNumbersNativeAsync()
+    public async Task CreateSingleColumnTableAsync(
+        string tableName,
+        string clickhouseType)
+    {
+        await DropTableAsync(tableName);
+
+        var createSql = $"CREATE TABLE {tableName} (Value {clickhouseType}) ENGINE = Memory";
+        var (_, createEx) = await _handler.QueryRawString(createSql);
+        if (createEx != null)
+        {
+            throw createEx;
+        }
+    }
+
+    public async Task InsertNativePayloadAsync(
+        string tableName,
+        ReadOnlyMemory<byte> payload)
+    {
+        var bulkWriter = await _handler.InputBulk($"INSERT INTO {tableName} FORMAT Native");
+        try
+        {
+            var wrote = await bulkWriter.WriteRowsBulkAsync(payload, hasMoreData: false);
+            if (!wrote)
+            {
+                throw new InvalidOperationException("Failed to write native block payload.");
+            }
+
+            var commit = await bulkWriter.Commit();
+            if (commit.IsFailed())
+            {
+                throw commit.Exception!;
+            }
+        }
+        finally
+        {
+            bulkWriter.Dispose();
+        }
+    }
+
+    public async Task<IReadOnlyList<T>> FetchCsvColumnAsync<T>(
+        string tableName,
+        Func<string, T> converter)
+    {
+        var (result, ex) = await _handler.QueryRawResult($"SELECT Value FROM {tableName} FORMAT CSV");
+        if (ex != null)
+        {
+            throw ex;
+        }
+
+        if (result == null || result.Output.IsEmpty)
+        {
+            return Array.Empty<T>();
+        }
+
+        var text = Encoding.UTF8.GetString(result.Output.Span);
+        var split = text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var values = new List<T>(split.Length);
+        foreach (var entry in split)
+        {
+            var value = entry;
+            if (value.Length > 0 && value[^1] == '\r')
+            {
+                value = value[..^1];
+            }
+            if (value is ['"', _, ..] && value[^1] == '"')
+            {
+                value = value[1..^1].Replace("\"\"", "\"");
+            }
+            values.Add(converter(value));
+        }
+
+        return values;
+    }
+
+    public async Task<IReadOnlyList<ulong>> Read5NumbersNativeAsync()
     {
         using var reader = await _handler.QueryNativeBulk("SELECT number FROM system.numbers LIMIT 5");
         var values = new List<ulong>();

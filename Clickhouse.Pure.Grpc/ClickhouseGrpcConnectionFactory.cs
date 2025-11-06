@@ -8,13 +8,11 @@ public static class ClickhouseGrpcConnectionFactory
         string password,
         ushort port)
     {
-        var clickhouseGrpcRouter = new ClickHouseGrpcRouter(
+        return new ClickHouseGrpcRouter(
             seedEndpoints: [endpoint],
             username: username,
             password: password,
             port: port,
             useSsl: false);
-
-        return clickhouseGrpcRouter;
     }
 }

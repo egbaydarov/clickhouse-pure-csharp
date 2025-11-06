@@ -48,6 +48,8 @@ public sealed class DefaultCallHandler
                     {
                         UserName = _baseQueryInfo.UserName,
                         Password = _baseQueryInfo.Password,
+                        TransportCompressionLevel = _baseQueryInfo.TransportCompressionLevel,
+                        TransportCompressionType = _baseQueryInfo.TransportCompressionType,
                         Query = initialQuery,
                         NextQueryInfo = true,
                         SessionId = Guid.NewGuid().ToString(),
@@ -86,6 +88,8 @@ public sealed class DefaultCallHandler
                 {
                     UserName = _baseQueryInfo.UserName,
                     Password = _baseQueryInfo.Password,
+                    TransportCompressionLevel = _baseQueryInfo.TransportCompressionLevel,
+                    TransportCompressionType = _baseQueryInfo.TransportCompressionType,
                     Query = query,
                 };
 
@@ -136,6 +140,8 @@ public sealed class DefaultCallHandler
                 {
                     UserName = _baseQueryInfo.UserName,
                     Password = _baseQueryInfo.Password,
+                    TransportCompressionLevel = _baseQueryInfo.TransportCompressionLevel,
+                    TransportCompressionType = _baseQueryInfo.TransportCompressionType,
                     Query = query,
                 };
 
@@ -165,7 +171,6 @@ public sealed class DefaultCallHandler
     }
 
     public async Task<NativeBulkReader> QueryNativeBulk(
-        [ConstantExpected]
         string query)
     {
         var call = _router.Call<AsyncServerStreamingCall<Result>>(
@@ -175,10 +180,10 @@ public sealed class DefaultCallHandler
                 {
                     UserName = _baseQueryInfo.UserName,
                     Password = _baseQueryInfo.Password,
+                    TransportCompressionLevel = _baseQueryInfo.TransportCompressionLevel,
+                    TransportCompressionType = _baseQueryInfo.TransportCompressionType,
                     OutputFormat = "Native",
                     Query = query,
-                    TransportCompressionLevel = 3,
-                    TransportCompressionType = "gzip",
                 };
 
                 var result = client

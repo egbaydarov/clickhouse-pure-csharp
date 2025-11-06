@@ -33,7 +33,7 @@ public class CallHandlerTests
 
         text
             .Should()
-            .NotBeNullOrWhiteSpace();
+            .StartWith("24.3");
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public class CallHandlerTests
     {
         var sut = SutFactory.Create();
 
-        var numbers = await sut.ReadNumbersNativeAsync();
+        var numbers = await sut.Read5NumbersNativeAsync();
 
         numbers
             .Should()

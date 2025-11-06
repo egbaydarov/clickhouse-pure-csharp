@@ -1,9 +1,11 @@
 #nullable enable
+using System;
 using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Generic;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
 
@@ -85,8 +87,101 @@ public partial class NativeFormatBlockReader
                 return null;
             }
 
+            var valueSpan = _data.Slice(_offsetValues, len); 
             _offsetValues += len;
-            return Encoding.UTF8.GetString(_data.Slice(_offsetValues, len));
+            return Encoding.UTF8.GetString(valueSpan);
+        }
+    }
+}
+
+public partial class NativeFormatBlockWriter
+{
+    public NullableStringColumnWriter AdvanceNullableStringColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Nullable(String)");
+        return NullableStringColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct NullableStringColumnWriter : ISequentialColumnWriter<string?>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _rows;
+        private readonly int _maskStart;
+        private readonly int _dataStart;
+        private int _index;
+        private int _dataEnd;
+
+        private NullableStringColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int maskStart)
+        {
+            _writer = writer;
+            _rows = rows;
+            _maskStart = maskStart;
+            _dataStart = maskStart;
+            _index = 0;
+            _dataEnd = -1;
+        }
+
+        internal static NullableStringColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var maskStart = writer.ReserveFixedSizeColumn(rows, 1);
+            return new NullableStringColumnWriter(writer, rows, maskStart);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(string? value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var flag = _writer.GetWritableSpan(_maskStart + _index, 1);
+            if (value is null)
+            {
+                flag[0] = 1;
+                _writer.WriteUVarInt(0);
+            }
+            else
+            {
+                flag[0] = 0;
+                _writer.WriteUtf8StringValue(value);
+            }
+
+            _index++;
+            if (_index == _rows)
+            {
+                _dataEnd = _writer.CurrentOffset;
+            }
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<string?> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            if (_dataEnd < 0)
+            {
+                _dataEnd = _writer.CurrentOffset;
+            }
+
+            return _writer.GetColumnSlice(_dataStart, _dataEnd - _dataStart);
         }
     }
 }

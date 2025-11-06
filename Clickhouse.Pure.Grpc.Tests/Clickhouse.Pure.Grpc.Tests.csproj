@@ -26,4 +26,10 @@
       <ProjectReference Include="..\Clickhouse.Pure.Grpc\Clickhouse.Pure.Grpc.csproj" />
     </ItemGroup>
 
+  <ItemGroup>
+    <None Update="TestData\*.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

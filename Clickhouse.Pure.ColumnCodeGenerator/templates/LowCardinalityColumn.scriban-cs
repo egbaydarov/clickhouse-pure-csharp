@@ -1,9 +1,11 @@
 #nullable enable
+using System;
 using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Generic;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
 
@@ -149,6 +151,177 @@ public partial class NativeFormatBlockReader
             if ((uint)key >= (uint)_dictionary.Length)
                 throw new IndexOutOfRangeException("lowcard key out of dict bounds");
             return _dictionary[key];
+        }
+    }
+    {{~ end ~}}
+}
+
+public partial class NativeFormatBlockWriter
+{
+    {{~ for n in LowCardinalityTypes ~}}
+    public LowCardinalityStringColumnWriter AdvanceLowCardinalityStringColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "LowCardinality(String)");
+        return LowCardinalityStringColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct LowCardinalityStringColumnWriter : ISequentialColumnWriter<{{ n.CsharpType }}>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _rows;
+        private readonly int _dataStart;
+        private readonly Dictionary<string, int> _lookup;
+        private readonly List<string> _dictionary;
+        private readonly int[] _keys;
+        private int _index;
+        private int _dataEnd;
+        private bool _encoded;
+
+        private LowCardinalityStringColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int dataStart)
+        {
+            _writer = writer;
+            _rows = rows;
+            _dataStart = dataStart;
+            _lookup = new Dictionary<string, int>(StringComparer.Ordinal);
+            _dictionary = new List<string>();
+            _keys = new int[rows];
+            _index = 0;
+            _dataEnd = -1;
+            _encoded = false;
+        }
+
+        internal static LowCardinalityStringColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            return new LowCardinalityStringColumnWriter(writer, rows, writer.CurrentOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance({{ n.CsharpType }} value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            if (!_lookup.TryGetValue(value, out var key))
+            {
+                key = _dictionary.Count;
+                _dictionary.Add(value);
+                _lookup[value] = key;
+            }
+
+            _keys[_index++] = key;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<{{ n.CsharpType }}> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            if (!_encoded)
+            {
+                Encode();
+            }
+
+            return _writer.GetColumnSlice(_dataStart, _dataEnd - _dataStart);
+        }
+
+        private void Encode()
+        {
+            const long CardinalityKeyVersion = 1;
+            const long CardinalityUpdateAll = (1L << 9) | (1L << 10);
+
+            var dictionaryCount = (long)_dictionary.Count;
+            var keyWidth = dictionaryCount switch
+            {
+                <= 256 => 1,
+                <= 65_536 => 2,
+                <= 0x1_0000_0000 => 4,
+                _ => 8
+            };
+
+            var keyFlag = keyWidth switch
+            {
+                1 => 0L,
+                2 => 1L,
+                4 => 2L,
+                8 => 3L,
+                _ => throw new InvalidOperationException("Unsupported key width for low cardinality column.")
+            };
+
+            _writer.WriteInt64Le(CardinalityKeyVersion);
+            _writer.WriteInt64Le(CardinalityUpdateAll | keyFlag);
+            _writer.WriteInt64Le(dictionaryCount);
+
+            foreach (var entry in _dictionary)
+            {
+                _writer.WriteUtf8StringValue(entry);
+            }
+
+            _writer.WriteInt64Le(_rows);
+
+            var keysStart = _writer.ReserveFixedSizeColumn(_rows, keyWidth);
+            switch (keyWidth)
+            {
+                case 1:
+                {
+                    var span = _writer.GetWritableSpan(keysStart, _rows);
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        span[i] = (byte)_keys[i];
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    var span = _writer.GetWritableSpan(keysStart, _rows * 2);
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(i * 2, 2), (ushort)_keys[i]);
+                    }
+                    break;
+                }
+                case 4:
+                {
+                    var span = _writer.GetWritableSpan(keysStart, _rows * 4);
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(i * 4, 4), (uint)_keys[i]);
+                    }
+                    break;
+                }
+                case 8:
+                {
+                    var span = _writer.GetWritableSpan(keysStart, _rows * 8);
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(i * 8, 8), (ulong)_keys[i]);
+                    }
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("Unsupported key width for low cardinality column.");
+            }
+
+            _dataEnd = _writer.CurrentOffset;
+            _encoded = true;
         }
     }
     {{~ end ~}}

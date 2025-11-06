@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Text;
 using Clickhouse.Pure.ColumnCodeGenerator;
+using System.Collections.Generic;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
 
@@ -92,6 +93,103 @@ public partial class NativeFormatBlockReader
             return _tz.Equals(TimeZoneInfo.Utc)
                 ? dtUtc
                 : TimeZoneInfo.ConvertTimeFromUtc(dtUtc, _tz);
+        }
+    }
+}
+
+public partial class NativeFormatBlockWriter
+{
+    public DateTime64ColumnWriter AdvanceDateTime64ColumnWriter(string columnName, int scale, string timeZone)
+    {
+        if ((uint)scale > 9)
+        {
+            throw new ArgumentOutOfRangeException(nameof(scale), "DateTime64 precision must be in [0..9].");
+        }
+
+        var typeName = string.IsNullOrEmpty(timeZone)
+            ? $"DateTime64({scale})"
+            : $"DateTime64({scale}, '{timeZone}')";
+        WriteColumnHeader(columnName, typeName);
+
+        return DateTime64ColumnWriter.Create(this, checked((int)_rowsCount), scale);
+    }
+
+    public ref struct DateTime64ColumnWriter : ISequentialColumnWriter<DateTimeOffset>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _rows;
+        private readonly int _startOffset;
+        private readonly int _scale;
+        private readonly long _pow;
+        private int _index;
+
+        private DateTime64ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset,
+            int scale)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _scale = scale;
+            _pow = Pow10[scale];
+            _index = 0;
+        }
+
+        internal static DateTime64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int scale)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 8);
+            return new DateTime64ColumnWriter(writer, rows, startOffset, scale);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(DateTimeOffset value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var utc = value.ToUniversalTime();
+            var ticksSinceEpoch = utc.UtcTicks - DateTime.UnixEpoch.Ticks;
+
+            var seconds = Math.DivRem(ticksSinceEpoch, TimeSpan.TicksPerSecond, out var remainderTicks);
+            if (remainderTicks < 0)
+            {
+                seconds--;
+                remainderTicks += TimeSpan.TicksPerSecond;
+            }
+
+            var fractional = (_pow * remainderTicks) / TimeSpan.TicksPerSecond;
+            var raw = checked(seconds * _pow + fractional);
+
+            var dest = _writer.GetWritableSpan(_startOffset + _index * 8, 8);
+            BinaryPrimitives.WriteInt64LittleEndian(dest, raw);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<DateTimeOffset> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 8);
         }
     }
 }

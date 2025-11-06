@@ -13,9 +13,10 @@ public static class SutFactory
             port: 9100);
 
         var handler = new DefaultCallHandler(
+            compression: "gzip",
             router: router, 
             password: password,
-            defaultTimeout: TimeSpan.FromSeconds(3), 
+            defaultTimeout: TimeSpan.FromSeconds(300), 
             username: username);
 
         var sut = new Sut(handler);

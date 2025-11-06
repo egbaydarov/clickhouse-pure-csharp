@@ -89,6 +89,16 @@ public class BulkWriter : IDisposable
 
             var response = await _asyncResultWriter.ResponseAsync;
 
+            if (response.Exception != null)
+            {
+                return new CommitBulkReponse(
+                    responseResult: null,
+                    exception: new RpcException(
+                        status: new Status(statusCode: StatusCode.Unavailable,
+                        detail: response.Exception.DisplayText,
+                        debugException: null)));
+            }
+
             return new CommitBulkReponse(
                 responseResult: response,
                 exception: null);

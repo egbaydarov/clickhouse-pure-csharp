@@ -1,9 +1,11 @@
 #nullable enable
+using System;
 using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Generic;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
 
@@ -84,7 +86,7 @@ public partial class NativeFormatBlockReader
                 throw new IndexOutOfRangeException("Date32 value out of range");
             }
 
-            var v = DateOnlyExt.From1900_01_01Days(_data.Slice(_offset, 4));
+            var v = DateOnlyExt.From1970_01_01DaysInt32(_data.Slice(_offset, 4));
             _offset += 4;
             return v;
         }
@@ -1287,6 +1289,1107 @@ public partial class NativeFormatBlockReader
             var v = BinaryPrimitives.ReadDoubleLittleEndian(_data.Slice(_offset, 8));
             _offset += 8;
             return v;
+        }
+    }
+}
+
+public partial class NativeFormatBlockWriter
+{
+    public Date32ColumnWriter AdvanceDate32ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Date32");
+        return Date32ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Date32ColumnWriter : ISequentialColumnWriter<DateOnly>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Date32ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Date32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 4);
+            return new Date32ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(DateOnly value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 4;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                4);
+            var days = value.DayNumber - 719162;
+            BinaryPrimitives.WriteInt32LittleEndian(dest, days);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<DateOnly> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 4);
+        }
+    }
+    public DateColumnWriter AdvanceDateColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Date");
+        return DateColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct DateColumnWriter : ISequentialColumnWriter<DateOnly>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private DateColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static DateColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 2);
+            return new DateColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(DateOnly value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 2;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                2);
+            var days = value.DayNumber - 719162;
+            if ((uint)days > ushort.MaxValue)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "DateOnly is outside of ClickHouse Date range (1970-01-01..2106-02-07).");
+            }
+            BinaryPrimitives.WriteUInt16LittleEndian(dest, (ushort)days);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<DateOnly> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 2);
+        }
+    }
+    public IPv4ColumnWriter AdvanceIPv4ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "IPv4");
+        return IPv4ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct IPv4ColumnWriter : ISequentialColumnWriter<IPAddress>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private IPv4ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static IPv4ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 4);
+            return new IPv4ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(IPAddress value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 4;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                4);
+            if (!value.TryWriteBytes(dest, out var written) || written != 4)
+            {
+                throw new InvalidOperationException("Failed to write IPv4 address bytes.");
+            }
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<IPAddress> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 4);
+        }
+    }
+    public BoolColumnWriter AdvanceBoolColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Bool");
+        return BoolColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct BoolColumnWriter : ISequentialColumnWriter<bool>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private BoolColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static BoolColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 1);
+            return new BoolColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(bool value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 1;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                1);
+            dest[0] = value ? (byte)1 : (byte)0;
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<bool> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 1);
+        }
+    }
+    public UInt8ColumnWriter AdvanceUInt8ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "UInt8");
+        return UInt8ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct UInt8ColumnWriter : ISequentialColumnWriter<byte>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private UInt8ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static UInt8ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 1);
+            return new UInt8ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(byte value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 1;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                1);
+            dest[0] = value;
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<byte> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 1);
+        }
+    }
+    public UInt16ColumnWriter AdvanceUInt16ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "UInt16");
+        return UInt16ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct UInt16ColumnWriter : ISequentialColumnWriter<ushort>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private UInt16ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static UInt16ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 2);
+            return new UInt16ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(ushort value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 2;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                2);
+            BinaryPrimitives.WriteUInt16LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<ushort> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 2);
+        }
+    }
+    public UInt32ColumnWriter AdvanceUInt32ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "UInt32");
+        return UInt32ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct UInt32ColumnWriter : ISequentialColumnWriter<uint>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private UInt32ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static UInt32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 4);
+            return new UInt32ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(uint value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 4;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                4);
+            BinaryPrimitives.WriteUInt32LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<uint> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 4);
+        }
+    }
+    public UInt64ColumnWriter AdvanceUInt64ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "UInt64");
+        return UInt64ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct UInt64ColumnWriter : ISequentialColumnWriter<ulong>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private UInt64ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static UInt64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 8);
+            return new UInt64ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(ulong value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 8;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                8);
+            BinaryPrimitives.WriteUInt64LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<ulong> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 8);
+        }
+    }
+    public UInt128ColumnWriter AdvanceUInt128ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "UInt128");
+        return UInt128ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct UInt128ColumnWriter : ISequentialColumnWriter<UInt128>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private UInt128ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static UInt128ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 16);
+            return new UInt128ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(UInt128 value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 16;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                16);
+            BinaryPrimitives.WriteUInt128LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<UInt128> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 16);
+        }
+    }
+    public Int8ColumnWriter AdvanceInt8ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Int8");
+        return Int8ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Int8ColumnWriter : ISequentialColumnWriter<sbyte>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Int8ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Int8ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 1);
+            return new Int8ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(sbyte value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 1;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                1);
+            dest[0] = unchecked((byte)value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<sbyte> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 1);
+        }
+    }
+    public Int16ColumnWriter AdvanceInt16ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Int16");
+        return Int16ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Int16ColumnWriter : ISequentialColumnWriter<short>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Int16ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Int16ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 2);
+            return new Int16ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(short value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 2;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                2);
+            BinaryPrimitives.WriteInt16LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<short> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 2);
+        }
+    }
+    public Int32ColumnWriter AdvanceInt32ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Int32");
+        return Int32ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Int32ColumnWriter : ISequentialColumnWriter<int>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Int32ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Int32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 4);
+            return new Int32ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(int value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 4;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                4);
+            BinaryPrimitives.WriteInt32LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<int> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 4);
+        }
+    }
+    public Int64ColumnWriter AdvanceInt64ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Int64");
+        return Int64ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Int64ColumnWriter : ISequentialColumnWriter<long>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Int64ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Int64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 8);
+            return new Int64ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(long value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 8;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                8);
+            BinaryPrimitives.WriteInt64LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<long> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 8);
+        }
+    }
+    public Int128ColumnWriter AdvanceInt128ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Int128");
+        return Int128ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Int128ColumnWriter : ISequentialColumnWriter<Int128>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Int128ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Int128ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 16);
+            return new Int128ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(Int128 value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 16;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                16);
+            BinaryPrimitives.WriteInt128LittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<Int128> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 16);
+        }
+    }
+    public Float32ColumnWriter AdvanceFloat32ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Float32");
+        return Float32ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Float32ColumnWriter : ISequentialColumnWriter<float>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Float32ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Float32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 4);
+            return new Float32ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(float value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 4;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                4);
+            BinaryPrimitives.WriteSingleLittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<float> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 4);
+        }
+    }
+    public Float64ColumnWriter AdvanceFloat64ColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "Float64");
+        return Float64ColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct Float64ColumnWriter : ISequentialColumnWriter<double>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _startOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Float64ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int startOffset)
+        {
+            _writer = writer;
+            _rows = rows;
+            _startOffset = startOffset;
+            _index = 0;
+        }
+
+        internal static Float64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows)
+        {
+            var startOffset = writer.ReserveFixedSizeColumn(rows, 8);
+            return new Float64ColumnWriter(writer, rows, startOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(double value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var destStart = _startOffset + _index * 8;
+            var dest = _writer.GetWritableSpan(
+                destStart,
+                8);
+            BinaryPrimitives.WriteDoubleLittleEndian(dest, value);
+            _index++;
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<double> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            return _writer.GetColumnSlice(_startOffset, _rows * 8);
         }
     }
 }

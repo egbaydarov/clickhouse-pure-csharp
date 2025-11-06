@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using Clickhouse.Pure.ColumnCodeGenerator;
+using System.Collections.Generic;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
 
@@ -65,6 +66,80 @@ public partial class NativeFormatBlockReader
             var s = Encoding.UTF8.GetString(_data.Slice(_offset, len));
             _offset += len;
             return s;
+        }
+    }
+}
+
+public partial class NativeFormatBlockWriter
+{
+    public StringColumnWriter AdvanceStringColumnWriter(string columnName)
+    {
+        WriteColumnHeader(columnName, "String");
+        return StringColumnWriter.Create(this, checked((int)_rowsCount));
+    }
+
+    public ref struct StringColumnWriter : ISequentialColumnWriter<string>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _rows;
+        private readonly int _dataStart;
+        private int _index;
+        private int _dataEnd;
+
+        private StringColumnWriter(NativeFormatBlockWriter writer, int rows, int dataStart)
+        {
+            _writer = writer;
+            _rows = rows;
+            _dataStart = dataStart;
+            _index = 0;
+            _dataEnd = -1;
+        }
+
+        internal static StringColumnWriter Create(NativeFormatBlockWriter writer, int rows)
+        {
+            return new StringColumnWriter(writer, rows, writer.CurrentOffset);
+        }
+
+        public int Length => _rows;
+
+        public void WriteCellValueAndAdvance(string value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            _writer.WriteUtf8StringValue(value);
+            _index++;
+
+            if (_index == _rows)
+            {
+                _dataEnd = _writer.CurrentOffset;
+            }
+        }
+
+        public void WriteCellValuesAndAdvance(IEnumerable<string> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteCellValueAndAdvance(value);
+            }
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            if (_dataEnd < 0)
+            {
+                _dataEnd = _writer.CurrentOffset;
+            }
+
+            return _writer.GetColumnSlice(_dataStart, _dataEnd - _dataStart);
         }
     }
 }
