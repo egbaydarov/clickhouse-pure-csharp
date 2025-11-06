@@ -123,9 +123,10 @@ public partial class NativeFormatBlockReader
         {
             throw new IndexOutOfRangeException("string header out of range");
         }
+        var start = _offset;
         _offset += len;
 
-        return _buffer.Span.Slice(_offset, len);
+        return _buffer.Span.Slice(start, len);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

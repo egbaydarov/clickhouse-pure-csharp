@@ -2,6 +2,26 @@
     <PropertyGroup>
         <OutputType>Library</OutputType>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <IsPackable>true</IsPackable>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <PackageId>Clickhouse.Pure.Grpc</PackageId>
+        <Title>ClickHouse gRPC Client for .NET</Title>
+        <Description>Self-contained ClickHouse gRPC client built with pure C#, including generated protobuf stubs.</Description>
+        <PackageTags>clickhouse;grpc;client</PackageTags>
+        <Authors>egbaydarov</Authors>
+        <Company>egbaydarov</Company>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <PackageProjectUrl>https://github.com/egbaydarov/clickhouse-pure-csharp</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/egbaydarov/clickhouse-pure-csharp</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryBranch>main</RepositoryBranch>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <NoWarn>CS1591</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <Protobuf Include="./Proto/clickhouse_grpc.proto" GrpcServices="Client" Link="Proto/clickhouse_grpc.proto" />
@@ -11,5 +31,9 @@
     </ItemGroup>
     <ItemGroup>
       <ProjectReference Include="..\Clickhouse.Pure.ColumnCodeGenerator\Clickhouse.Pure.ColumnCodeGenerator.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <None Include="..\README.md" Pack="true" PackagePath="/" Link="README.md" />
+        <None Include="Proto/clickhouse_grpc.proto" Pack="true" PackagePath="contentFiles/any/$(TargetFramework)/proto/" />
     </ItemGroup>
 </Project>
