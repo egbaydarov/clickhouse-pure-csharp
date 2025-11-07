@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace Clickhouse.Pure.Grpc.Tests;
@@ -46,7 +48,7 @@ public class Sut
             throw dropEx;
         }
 
-        var (_, createEx) = await _handler.QueryRawString($"CREATE TABLE {tableName} (value UInt32) ENGINE = Memory");
+        var (_, createEx) = await _handler.QueryRawString($"CREATE TABLE {tableName} (value UInt32) ENGINE = MergeTree ORDER BY tuple()");
         if (createEx != null)
         {
             throw createEx;
@@ -132,9 +134,25 @@ public class Sut
         string tableName,
         string clickhouseType)
     {
+        await CreateTableAsync(tableName, new[] { ("Value", clickhouseType) });
+    }
+
+    public async Task CreateTableAsync(
+        string tableName,
+        IReadOnlyList<(string Name, string Type)> columns)
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException("At least one column definition must be provided.", nameof(columns));
+        }
+
         await DropTableAsync(tableName);
 
-        var createSql = $"CREATE TABLE {tableName} (Value {clickhouseType}) ENGINE = Memory";
+        var columnsSql = string.Join(", ", columns.Select(c => $"{c.Name} {c.Type}"));
+
+        var createSql = $"CREATE TABLE {tableName} ({columnsSql}) ENGINE = MergeTree ORDER BY tuple()";
         var (_, createEx) = await _handler.QueryRawString(createSql);
         if (createEx != null)
         {
@@ -171,7 +189,20 @@ public class Sut
         string tableName,
         Func<string, T> converter)
     {
-        var (result, ex) = await _handler.QueryRawResult($"SELECT Value FROM {tableName} FORMAT CSV");
+        return await FetchCsvColumnAsync(tableName, "Value", converter);
+    }
+
+    public async Task<IReadOnlyList<T>> FetchCsvColumnAsync<T>(
+        string tableName,
+        string columnExpression,
+        Func<string, T> converter)
+    {
+        if (string.IsNullOrWhiteSpace(columnExpression))
+        {
+            throw new ArgumentException("Column expression must be provided", nameof(columnExpression));
+        }
+
+        var (result, ex) = await _handler.QueryRawResult($"SELECT {columnExpression} FROM {tableName} FORMAT CSV");
         if (ex != null)
         {
             throw ex;

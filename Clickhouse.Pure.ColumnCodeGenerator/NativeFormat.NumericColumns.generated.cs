@@ -246,7 +246,7 @@ public partial class NativeFormatBlockReader
                 throw new IndexOutOfRangeException("IPv4 value out of range");
             }
 
-            var v = new IPAddress(_data.Slice(_offset, 4));
+            var v = IPAddressExt.FromLittleEndianIPv4(_data.Slice(_offset, 4));
             _offset += 4;
             return v;
         }
@@ -1482,10 +1482,7 @@ public partial class NativeFormatBlockWriter
             var dest = _writer.GetWritableSpan(
                 destStart,
                 4);
-            if (!value.TryWriteBytes(dest, out var written) || written != 4)
-            {
-                throw new InvalidOperationException("Failed to write IPv4 address bytes.");
-            }
+            IPAddressExt.WriteLittleEndianIPv4(dest, value);
             _index++;
         }
 

@@ -5,6 +5,7 @@ using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Net;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
 
@@ -428,4 +429,34 @@ public static class DateOnlyExt
     }
 
     private const int UnixEpochDayNumber = 719162;
+}
+
+public static class IPAddressExt
+{
+    private const int IPv4Length = 4;
+
+    public static IPAddress FromLittleEndianIPv4(ReadOnlySpan<byte> span)
+    {
+        if (span.Length < IPv4Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(span), "IPv4 span must be at least 4 bytes long.");
+        }
+
+        var bigEndian = BinaryPrimitives.ReadUInt32LittleEndian(span);
+        Span<byte> buffer = stackalloc byte[IPv4Length];
+        BinaryPrimitives.WriteUInt32BigEndian(buffer, bigEndian);
+        return new IPAddress(buffer);
+    }
+
+    public static void WriteLittleEndianIPv4(Span<byte> destination, IPAddress value)
+    {
+        Span<byte> buffer = stackalloc byte[IPv4Length];
+        if (!value.TryWriteBytes(buffer, out var written) || written != IPv4Length)
+        {
+            throw new InvalidOperationException("Failed to write IPv4 address bytes.");
+        }
+
+        var bigEndian = BinaryPrimitives.ReadUInt32BigEndian(buffer);
+        BinaryPrimitives.WriteUInt32LittleEndian(destination, bigEndian);
+    }
 }

@@ -52,14 +52,11 @@ internal static class Program
                 {
                     ClickhouseType = "IPv4",
                     CsharpType = "IPAddress",
-                    SpanInterpretFunction = "new IPAddress",
+                    SpanInterpretFunction = "IPAddressExt.FromLittleEndianIPv4",
                     ValueSizeInBytes = 4,
                     WriterValueStatements = new[]
                     {
-                        "if (!value.TryWriteBytes(dest, out var written) || written != 4)",
-                        "{",
-                        "    throw new InvalidOperationException(\"Failed to write IPv4 address bytes.\");",
-                        "}"
+                        "IPAddressExt.WriteLittleEndianIPv4(dest, value);"
                     }
                 },
 
