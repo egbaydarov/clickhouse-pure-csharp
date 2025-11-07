@@ -1,7 +1,9 @@
+using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Text;
 
-namespace Clickhouse.Pure.ColumnCodeGenerator;
+namespace Clickhouse.Pure.Columns;
 
 public partial class NativeFormatBlockReader
 {

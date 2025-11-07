@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.IO;
+using System.Text;
 using Scriban;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
@@ -8,7 +9,7 @@ internal static class Program
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private const string TemplatesDir = "templates";
-    private const string OutDir = "../../../";
+    private const string OutDir = "../../../../Clickhouse.Pure.Columns/";
 
     private static int Main()
     {
@@ -236,6 +237,8 @@ internal static class Program
                     Size = 0,
                 }
             };
+
+            Directory.CreateDirectory(OutDir);
 
             var jobs = new[]
             {

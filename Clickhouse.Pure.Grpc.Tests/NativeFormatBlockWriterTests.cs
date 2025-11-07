@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Net;
 using AwesomeAssertions;
-using Clickhouse.Pure.ColumnCodeGenerator;
+using Clickhouse.Pure.Columns;
 using Xunit;
 
 namespace Clickhouse.Pure.Grpc.Tests;

@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Grpc.Core;
-using Clickhouse.Pure.ColumnCodeGenerator;
+using Clickhouse.Pure.Columns;
 
 namespace Clickhouse.Pure.Grpc;
 

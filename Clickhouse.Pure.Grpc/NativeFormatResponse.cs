@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Grpc.Core;
-using Clickhouse.Pure.ColumnCodeGenerator;
+using Clickhouse.Pure.Columns;
 
 namespace Clickhouse.Pure.Grpc;
 

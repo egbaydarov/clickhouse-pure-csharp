@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>true</IsPackable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageId>Clickhouse.Pure.Columns</PackageId>
+    <Title>ClickHouse Native Format Columns for .NET</Title>
+    <Description>Typed column readers and writers for ClickHouse Native format used by Clickhouse.Pure.</Description>
+    <PackageTags>clickhouse;native;columns</PackageTags>
+    <Authors>egbaydarov</Authors>
+    <Company>egbaydarov</Company>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageProjectUrl>https://github.com/egbaydarov/clickhouse-pure-csharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/egbaydarov/clickhouse-pure-csharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryBranch>main</RepositoryBranch>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <NoWarn>CS1591</NoWarn>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="/" Link="README.md" />
+  </ItemGroup>
+</Project>

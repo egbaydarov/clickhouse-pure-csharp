@@ -22,6 +22,7 @@
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <NoWarn>CS1591</NoWarn>
+        <IsAotCompatible>true</IsAotCompatible>
     </PropertyGroup>
     <ItemGroup>
         <Protobuf Include="./Proto/clickhouse_grpc.proto" GrpcServices="Client" Link="Proto/clickhouse_grpc.proto" />
@@ -30,7 +31,7 @@
         <PackageReference Include="Grpc.Tools" PrivateAssets="All" Version="2.72.0" />
     </ItemGroup>
     <ItemGroup>
-      <ProjectReference Include="..\Clickhouse.Pure.ColumnCodeGenerator\Clickhouse.Pure.ColumnCodeGenerator.csproj" />
+      <ProjectReference Include="..\Clickhouse.Pure.Columns\Clickhouse.Pure.Columns.csproj" />
     </ItemGroup>
     <ItemGroup>
         <None Include="..\README.md" Pack="true" PackagePath="/" Link="README.md" />

@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Collections.Generic;
 
-namespace Clickhouse.Pure.ColumnCodeGenerator;
+namespace Clickhouse.Pure.Columns;
 
 public partial class NativeFormatBlockReader
 {
