@@ -119,10 +119,16 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
-      - name: Build package
-        run: dotnet pack Clickhouse.Pure.Grpc/Clickhouse.Pure.Grpc.csproj --configuration Release -p:ContinuousIntegrationBuild=true -p:PackageVersion=${{ steps.package_version.outputs.version }} --output artifacts
+      - name: Build packages
+        run: |
+          for project in \
+            Clickhouse.Pure.Columns/Clickhouse.Pure.Columns.csproj \
+            Clickhouse.Pure.Grpc/Clickhouse.Pure.Grpc.csproj
+          do
+            dotnet pack "$project" --configuration Release -p:ContinuousIntegrationBuild=true -p:PackageVersion=${{ steps.package_version.outputs.version }} --output artifacts
+          done
 
-      - name: Push package to NuGet
+      - name: Push packages to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
@@ -130,9 +136,11 @@ jobs:
             echo "NUGET_API_KEY secret is not configured" >&2
             exit 1
           fi
-          dotnet nuget push "artifacts/Clickhouse.Pure.Grpc.${{ steps.package_version.outputs.version }}.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${NUGET_API_KEY}" --skip-duplicate
+          for package in Clickhouse.Pure.Columns Clickhouse.Pure.Grpc; do
+            dotnet nuget push "artifacts/${package}.${{ steps.package_version.outputs.version }}.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${NUGET_API_KEY}" --skip-duplicate
+          done
 
-      - name: Push symbols package to NuGet
+      - name: Push symbols packages to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
@@ -140,9 +148,11 @@ jobs:
             echo "NUGET_API_KEY secret is not configured" >&2
             exit 1
           fi
-          if compgen -G "artifacts/Clickhouse.Pure.Grpc.${{ steps.package_version.outputs.version }}.snupkg" > /dev/null; then
-            dotnet nuget push "artifacts/Clickhouse.Pure.Grpc.${{ steps.package_version.outputs.version }}.snupkg" --source https://api.nuget.org/v3/index.json --api-key "${NUGET_API_KEY}" --skip-duplicate
-          else
-            echo "No symbol packages produced."
-          fi
+          for package in Clickhouse.Pure.Columns Clickhouse.Pure.Grpc; do
+            if compgen -G "artifacts/${package}.${{ steps.package_version.outputs.version }}.snupkg" > /dev/null; then
+              dotnet nuget push "artifacts/${package}.${{ steps.package_version.outputs.version }}.snupkg" --source https://api.nuget.org/v3/index.json --api-key "${NUGET_API_KEY}" --skip-duplicate
+            else
+              echo "No symbol packages produced for ${package}."
+            fi
+          done
 

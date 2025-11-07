@@ -203,7 +203,70 @@
           '';
         };
 
-        devPackages = with pkgs; [
+        releaseTagger = pkgs.writeShellApplication {
+          name = "tag-release";
+          runtimeInputs = [
+            pkgs.git
+            pkgs.coreutils
+          ];
+          text = ''
+            set -euo pipefail
+            ${projectRootInit}
+
+            usage() {
+              cat <<'USAGE'
+Usage: tag-release <tag> <description>
+
+Creates an annotated git tag with the provided description and pushes it to the remote.
+Set GIT_REMOTE to override the default remote (origin).
+USAGE
+            }
+
+            if [ "$#" -lt 2 ]; then
+              usage
+              exit 1
+            fi
+
+            tag="$1"
+            shift
+            message="$*"
+
+            if [ -z "$message" ]; then
+              printf 'error: description must not be empty\n' >&2
+              usage
+              exit 1
+            fi
+
+            remote="''${GIT_REMOTE:-origin}"
+
+            cd "$PROJECT_ROOT"
+
+            if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              printf 'error: %s is not inside a git repository\n' "$PROJECT_ROOT" >&2
+              exit 1
+            fi
+
+            if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+              printf 'error: working tree has uncommitted changes; please commit or stash before tagging\n' >&2
+              exit 1
+            fi
+
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+              printf 'error: tag %s already exists\n' "$tag" >&2
+              exit 1
+            fi
+
+            printf 'Creating annotated tag %s\n' "$tag"
+            git tag -a "$tag" -m "$message"
+
+            printf 'Pushing tag %s to %s\n' "$tag" "$remote"
+            git push "$remote" "$tag"
+
+            printf 'Tag %s created and pushed successfully.\n' "$tag"
+          '';
+        };
+
+        devPackages = (with pkgs; [
           combinedDotnet
           netcoredbg
           csharp-ls
@@ -223,7 +286,7 @@
           riderLauncher
           riderStopper
           neovim
-        ];
+        ]) ++ [ releaseTagger ];
 
         devShell = pkgs.mkShell {
           packages = devPackages;
@@ -252,6 +315,10 @@
           nvim = {
             type = "app";
             program = "${nvimLauncher}/bin/nvim-dotnet";
+          };
+          "tag-release" = {
+            type = "app";
+            program = "${releaseTagger}/bin/tag-release";
           };
         };
 
