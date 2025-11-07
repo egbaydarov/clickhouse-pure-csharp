@@ -1,5 +1,4 @@
 #pragma warning disable CS0414 // Field is assigned but its value is never used
-using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
