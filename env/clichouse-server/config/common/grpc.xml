@@ -1,9 +1,9 @@
-<yandex>
+<clickhouse>
     <grpc_port>9100</grpc_port>
     <grpc>
         <enable_ssl>false</enable_ssl>
         <max_concurrent_streams>100</max_concurrent_streams>
         <max_message_size>104857600</max_message_size>
     </grpc>
-</yandex>
+</clickhouse>
 

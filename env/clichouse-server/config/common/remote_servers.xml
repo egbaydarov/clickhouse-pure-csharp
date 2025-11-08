@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <remote_servers>
         <ci_cluster>
             <shard>
@@ -6,6 +6,8 @@
                 <replica>
                     <host>clickhouse-1</host>
                     <port>9000</port>
+                    <user>default</user>
+                    <password>default</password>
                 </replica>
             </shard>
             <shard>
@@ -13,6 +15,8 @@
                 <replica>
                     <host>clickhouse-2</host>
                     <port>9000</port>
+                    <user>default</user>
+                    <password>default</password>
                 </replica>
             </shard>
             <shard>
@@ -20,9 +24,11 @@
                 <replica>
                     <host>clickhouse-3</host>
                     <port>9000</port>
+                    <user>default</user>
+                    <password>default</password>
                 </replica>
             </shard>
         </ci_cluster>
     </remote_servers>
-</yandex>
+</clickhouse>
 

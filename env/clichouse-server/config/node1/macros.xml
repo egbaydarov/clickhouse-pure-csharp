@@ -1,8 +1,10 @@
-<yandex>
+<clickhouse>
     <macros>
         <cluster>ci_cluster</cluster>
         <shard>1</shard>
         <replica>clickhouse-1</replica>
+        <user>default</user>
+        <password>default</password>
     </macros>
-</yandex>
+</clickhouse>
 
