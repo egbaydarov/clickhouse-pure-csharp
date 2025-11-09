@@ -208,7 +208,7 @@ public class Sut
 
         if (result == null || result.Output.IsEmpty)
         {
-            return Array.Empty<T>();
+            return [];
         }
 
         var text = Encoding.UTF8.GetString(result.Output.Span);
@@ -217,13 +217,12 @@ public class Sut
         foreach (var entry in split)
         {
             var value = entry;
-            if (value.Length > 0 && value[^1] == '\r')
-            {
-                value = value[..^1];
-            }
             if (value is ['"', _, ..] && value[^1] == '"')
             {
-                value = value[1..^1].Replace("\"\"", "\"");
+                // remove quotes
+                // replace escaped with regular
+                value = value[1..^1]
+                    .Replace("\"\"", "\"");
             }
             values.Add(converter(value));
         }
@@ -255,10 +254,10 @@ public class Sut
                 continue;
             }
 
-            var column = response.BlockReader.AdvanceUInt64Column();
+            var column = response.BlockReader.ReadUInt64Column();
             while (column.HasMoreRows())
             {
-                values.Add(column.GetCellValueAndAdvance());
+                values.Add(column.ReadNext());
             }
         }
 

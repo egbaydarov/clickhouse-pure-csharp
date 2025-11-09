@@ -51,11 +51,11 @@ internal static class Program
                 {
                     ClickhouseType = "IPv4",
                     CsharpType = "IPAddress",
-                    SpanInterpretFunction = "IPAddressExt.FromLittleEndianIPv4",
+                    SpanInterpretFunction = "IpAddressExt.FromLittleEndianIPv4",
                     ValueSizeInBytes = 4,
                     WriterValueStatements = new[]
                     {
-                        "IPAddressExt.WriteLittleEndianIPv4(dest, value);"
+                        "IpAddressExt.WriteLittleEndianIPv4(dest, value);"
                     }
                 },
 

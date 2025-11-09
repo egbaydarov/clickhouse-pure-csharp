@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Buffers.Text;
 using System.Net;
@@ -12,7 +13,7 @@ namespace Clickhouse.Pure.Columns;
 
 public partial class NativeFormatBlockReader
 {
-    public FixedStringColumnReader AdvanceFixedStringColumn()
+    public FixedStringColumnReader ReadFixedStringColumn()
     {
         // Type header is like FixedString(N)
         if (_columnsRead >= _columnsCount)
@@ -34,7 +35,7 @@ public partial class NativeFormatBlockReader
                 value: out int value,
                 bytesConsumed: out _))
         {
-            return FixedStringColumnReader.CreateAndAdvance(_buffer.Span, ref _offset, (int)_rowsCount, value);
+            return FixedStringColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount, value);
         }
 
         throw new InvalidOperationException($"Column type mismatch. Expected FixedString(number) for column '{Encoding.UTF8.GetString(name)}', but got '{Encoding.UTF8.GetString(type)}'.");
@@ -57,7 +58,7 @@ public partial class NativeFormatBlockReader
             _index = 0;
         }
 
-        public static FixedStringColumnReader CreateAndAdvance(ReadOnlySpan<byte> data, scoped ref int offset, int rows,
+        public static FixedStringColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset, int rows,
             int fixedLen)
         {
             var start = offset;
@@ -72,7 +73,7 @@ public partial class NativeFormatBlockReader
 
         public bool HasMoreRows() => _index < _rows;
 
-        public string GetCellValueAndAdvance()
+        public string ReadNext()
         {
             if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
             _index++;
@@ -95,7 +96,7 @@ public partial class NativeFormatBlockReader
 
 public partial class NativeFormatBlockWriter
 {
-    public FixedStringColumnWriter AdvanceFixedStringColumnWriter(string columnName, int size)
+    public FixedStringColumnWriter CreateFixedStringColumnWriter(string columnName, int size)
     {
         if (size <= 0)
         {
@@ -107,25 +108,27 @@ public partial class NativeFormatBlockWriter
         return FixedStringColumnWriter.Create(this, checked((int)_rowsCount), size);
     }
 
-    public ref struct FixedStringColumnWriter : ISequentialColumnWriter<string>
+    public ref struct FixedStringColumnWriter : ISequentialColumnWriter<string, FixedStringColumnWriter>
     {
         private NativeFormatBlockWriter _writer;
         private readonly int _rows;
-        private readonly int _startOffset;
         private readonly int _size;
+        private readonly byte[] _buffer;
         private int _index;
+        private bool _segmentAdded;
 
         private FixedStringColumnWriter(
             NativeFormatBlockWriter writer,
             int rows,
-            int startOffset,
-            int size)
+            int size,
+            byte[] buffer)
         {
             _writer = writer;
             _rows = rows;
-            _startOffset = startOffset;
             _size = size;
+            _buffer = buffer;
             _index = 0;
+            _segmentAdded = false;
         }
 
         internal static FixedStringColumnWriter Create(
@@ -133,13 +136,14 @@ public partial class NativeFormatBlockWriter
             int rows,
             int size)
         {
-            var startOffset = writer.ReserveFixedSizeColumn(rows, size);
-            return new FixedStringColumnWriter(writer, rows, startOffset, size);
+            var totalSize = rows * size;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            return new FixedStringColumnWriter(writer, rows, size, buffer);
         }
 
         public int Length => _rows;
 
-        public void WriteCellValueAndAdvance(string value)
+        public FixedStringColumnWriter WriteNext(string value)
         {
             if (_index >= _rows)
             {
@@ -152,9 +156,7 @@ public partial class NativeFormatBlockWriter
                 throw new ArgumentOutOfRangeException(nameof(value), $"FixedString value exceeds size {_size}.");
             }
 
-            var dest = _writer.GetWritableSpan(
-                _startOffset + _index * _size,
-                _size);
+            var dest = _buffer.AsSpan(_index * _size, _size);
             dest.Clear();
             if (byteCount > 0)
             {
@@ -162,15 +164,29 @@ public partial class NativeFormatBlockWriter
             }
 
             _index++;
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return this;
         }
 
-        public void WriteCellValuesAndAdvance(IEnumerable<string> values)
+        public NativeFormatBlockWriter WriteAll(IEnumerable<string> values)
         {
             if (values is null) throw new ArgumentNullException(nameof(values));
             foreach (var value in values)
             {
-                WriteCellValueAndAdvance(value);
+                WriteNext(value);
             }
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return _writer;
         }
 
         public ReadOnlyMemory<byte> GetColumnData()
@@ -180,7 +196,21 @@ public partial class NativeFormatBlockWriter
                 throw new InvalidOperationException("Attempted to get column data before all rows were written.");
             }
 
-            return _writer.GetColumnSlice(_startOffset, _rows * _size);
+            EnsureSegmentAdded();
+            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * _size);
+        }
+
+        private void EnsureSegmentAdded()
+        {
+            if (_segmentAdded)
+            {
+                return;
+            }
+
+            var length = _rows * _size;
+            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
+            _writer.AddSegment(segment, _buffer);
+            _segmentAdded = true;
         }
     }
 }

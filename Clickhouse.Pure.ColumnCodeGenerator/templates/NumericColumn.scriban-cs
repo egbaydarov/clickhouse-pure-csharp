@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -12,7 +13,7 @@ namespace Clickhouse.Pure.Columns;
 public partial class NativeFormatBlockReader
 {
     {{~ for n in NumericTypes ~}}
-    public {{ n.ClickhouseType }}ColumnReader Advance{{ n.ClickhouseType }}Column()
+    public {{ n.ClickhouseType }}ColumnReader Read{{ n.ClickhouseType }}Column()
     {
         if (_columnsRead >= _columnsCount)
         {
@@ -28,7 +29,7 @@ public partial class NativeFormatBlockReader
             throw new InvalidOperationException($"Column type mismatch. Expected {{ n.ClickhouseType }} for column {Encoding.UTF8.GetString(name)}, but got '{Encoding.UTF8.GetString(type)}'.");
         }
 
-        return {{ n.ClickhouseType }}ColumnReader.CreateAndAdvance(_buffer.Span, ref _offset, (int)_rowsCount);
+        return {{ n.ClickhouseType }}ColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
     }
 
     public ref struct {{ n.ClickhouseType }}ColumnReader : ISequentialColumnReader<{{ n.CsharpType }}>
@@ -51,7 +52,7 @@ public partial class NativeFormatBlockReader
             _index = 0;
         }
 
-        public static {{ n.ClickhouseType }}ColumnReader CreateAndAdvance(
+        public static {{ n.ClickhouseType }}ColumnReader CreateAndConsume(
             ReadOnlySpan<byte> data,
             scoped ref int offset,
             int rows)
@@ -74,7 +75,7 @@ public partial class NativeFormatBlockReader
 
         public bool HasMoreRows() => _index < _rows;
 
-        public {{ n.CsharpType }} GetCellValueAndAdvance()
+        public {{ n.CsharpType }} ReadNext()
         {
             if (_index >= _rows)
             {
@@ -98,66 +99,82 @@ public partial class NativeFormatBlockReader
 public partial class NativeFormatBlockWriter
 {
     {{~ for n in NumericTypes ~}}
-    public {{ n.ClickhouseType }}ColumnWriter Advance{{ n.ClickhouseType }}ColumnWriter(string columnName)
+    public {{ n.ClickhouseType }}ColumnWriter Create{{ n.ClickhouseType }}ColumnWriter(string columnName)
     {
         WriteColumnHeader(columnName, "{{ n.ClickhouseType }}");
         return {{ n.ClickhouseType }}ColumnWriter.Create(this, checked((int)_rowsCount));
     }
 
-    public ref struct {{ n.ClickhouseType }}ColumnWriter : ISequentialColumnWriter<{{ n.CsharpType }}>
+    public ref struct {{ n.ClickhouseType }}ColumnWriter : ISequentialColumnWriter<{{ n.CsharpType }}, {{ n.ClickhouseType }}ColumnWriter>
     {
+        private const int ValueSize = {{ n.ValueSizeInBytes }};
+
         private NativeFormatBlockWriter _writer;
-        private readonly int _startOffset;
         private readonly int _rows;
+        private readonly byte[] _buffer;
         private int _index;
+        private bool _segmentAdded;
 
         private {{ n.ClickhouseType }}ColumnWriter(
             NativeFormatBlockWriter writer,
             int rows,
-            int startOffset)
+            byte[] buffer)
         {
             _writer = writer;
             _rows = rows;
-            _startOffset = startOffset;
+            _buffer = buffer;
             _index = 0;
+            _segmentAdded = false;
         }
 
         internal static {{ n.ClickhouseType }}ColumnWriter Create(
             NativeFormatBlockWriter writer,
             int rows)
         {
-            var startOffset = writer.ReserveFixedSizeColumn(rows, {{ n.ValueSizeInBytes }});
-            return new {{ n.ClickhouseType }}ColumnWriter(writer, rows, startOffset);
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            return new {{ n.ClickhouseType }}ColumnWriter(writer, rows, buffer);
         }
 
         public int Length => _rows;
 
-        public void WriteCellValueAndAdvance({{ n.CsharpType }} value)
+        public {{ n.ClickhouseType }}ColumnWriter WriteNext({{ n.CsharpType }} value)
         {
             if (_index >= _rows)
             {
                 throw new InvalidOperationException("No more rows to write.");
             }
 
-            var destStart = _startOffset + _index * {{ n.ValueSizeInBytes }};
-            var dest = _writer.GetWritableSpan(
-                destStart,
-                {{ n.ValueSizeInBytes }});
+            var dest = _buffer.AsSpan(_index * ValueSize, ValueSize);
             {{~ if n.WriterValueStatements != null && n.WriterValueStatements.size > 0 ~}}
 {{~ for stmt in n.WriterValueStatements ~}}
             {{ stmt }}
 {{~ end ~}}
             {{~ end ~}}
             _index++;
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return this;
         }
 
-        public void WriteCellValuesAndAdvance(IEnumerable<{{ n.CsharpType }}> values)
+        public NativeFormatBlockWriter WriteAll(IEnumerable<{{ n.CsharpType }}> values)
         {
             if (values is null) throw new ArgumentNullException(nameof(values));
             foreach (var value in values)
             {
-                WriteCellValueAndAdvance(value);
+                WriteNext(value);
             }
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return _writer;
         }
 
         public ReadOnlyMemory<byte> GetColumnData()
@@ -167,7 +184,21 @@ public partial class NativeFormatBlockWriter
                 throw new InvalidOperationException("Attempted to get column data before all rows were written.");
             }
 
-            return _writer.GetColumnSlice(_startOffset, _rows * {{ n.ValueSizeInBytes }});
+            EnsureSegmentAdded();
+            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
+        }
+
+        private void EnsureSegmentAdded()
+        {
+            if (_segmentAdded)
+            {
+                return;
+            }
+
+            var length = _rows * ValueSize;
+            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
+            _writer.AddSegment(segment, _buffer);
+            _segmentAdded = true;
         }
     }
     {{~ end ~}}

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Text;
@@ -7,7 +8,7 @@ namespace Clickhouse.Pure.Columns;
 
 public partial class NativeFormatBlockReader
 {
-    public DateTime64ColumnReader AdvanceDateTime64Column(int scale, string timeZone)
+    public DateTime64ColumnReader ReadDateTime64Column(int scale, string timeZone)
     {
         if (_columnsRead >= _columnsCount)
         {
@@ -21,7 +22,7 @@ public partial class NativeFormatBlockReader
             throw new InvalidOperationException($"Column type mismatch. Expected DateTime64 for column {Encoding.UTF8.GetString(name)}, but got '{Encoding.UTF8.GetString(type)}'.");
         }
 
-        return DateTime64ColumnReader.CreateAndAdvance(_buffer.Span, ref _offset, (int)_rowsCount, scale, timeZone);
+        return DateTime64ColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount, scale, timeZone);
     }
 
     public ref struct DateTime64ColumnReader : ISequentialColumnReader<DateTimeOffset>
@@ -43,7 +44,7 @@ public partial class NativeFormatBlockReader
             _index = 0;
         }
 
-        public static DateTime64ColumnReader CreateAndAdvance(ReadOnlySpan<byte> data, scoped ref int offset, int rows,
+        public static DateTime64ColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset, int rows,
             int scale, string timeZone)
         {
             var start = offset;
@@ -58,7 +59,7 @@ public partial class NativeFormatBlockReader
 
         public bool HasMoreRows() => _index < _rows;
 
-        public DateTimeOffset GetCellValueAndAdvance()
+        public DateTimeOffset ReadNext()
         {
             if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
             _index++;
@@ -98,7 +99,7 @@ public partial class NativeFormatBlockReader
 
 public partial class NativeFormatBlockWriter
 {
-    public DateTime64ColumnWriter AdvanceDateTime64ColumnWriter(string columnName, int scale, string timeZone)
+    public DateTime64ColumnWriter CreateDateTime64ColumnWriter(string columnName, int scale, string timeZone)
     {
         if ((uint)scale > 9)
         {
@@ -113,27 +114,29 @@ public partial class NativeFormatBlockWriter
         return DateTime64ColumnWriter.Create(this, checked((int)_rowsCount), scale);
     }
 
-    public ref struct DateTime64ColumnWriter : ISequentialColumnWriter<DateTimeOffset>
+    public ref struct DateTime64ColumnWriter : ISequentialColumnWriter<DateTimeOffset, DateTime64ColumnWriter>
     {
+        private const int ValueSize = 8;
+
         private NativeFormatBlockWriter _writer;
         private readonly int _rows;
-        private readonly int _startOffset;
-        private readonly int _scale;
+        private readonly byte[] _buffer;
         private readonly long _pow;
         private int _index;
+        private bool _segmentAdded;
 
         private DateTime64ColumnWriter(
             NativeFormatBlockWriter writer,
             int rows,
-            int startOffset,
+            byte[] buffer,
             int scale)
         {
             _writer = writer;
             _rows = rows;
-            _startOffset = startOffset;
-            _scale = scale;
+            _buffer = buffer;
             _pow = Pow10[scale];
             _index = 0;
+            _segmentAdded = false;
         }
 
         internal static DateTime64ColumnWriter Create(
@@ -141,13 +144,14 @@ public partial class NativeFormatBlockWriter
             int rows,
             int scale)
         {
-            var startOffset = writer.ReserveFixedSizeColumn(rows, 8);
-            return new DateTime64ColumnWriter(writer, rows, startOffset, scale);
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            return new DateTime64ColumnWriter(writer, rows, buffer, scale);
         }
 
         public int Length => _rows;
 
-        public void WriteCellValueAndAdvance(DateTimeOffset value)
+        public DateTime64ColumnWriter WriteNext(DateTimeOffset value)
         {
             if (_index >= _rows)
             {
@@ -167,18 +171,32 @@ public partial class NativeFormatBlockWriter
             var fractional = (_pow * remainderTicks) / TimeSpan.TicksPerSecond;
             var raw = checked(seconds * _pow + fractional);
 
-            var dest = _writer.GetWritableSpan(_startOffset + _index * 8, 8);
+            var dest = _buffer.AsSpan(_index * ValueSize, ValueSize);
             BinaryPrimitives.WriteInt64LittleEndian(dest, raw);
             _index++;
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return this;
         }
 
-        public void WriteCellValuesAndAdvance(IEnumerable<DateTimeOffset> values)
+        public NativeFormatBlockWriter WriteAll(IEnumerable<DateTimeOffset> values)
         {
             if (values is null) throw new ArgumentNullException(nameof(values));
             foreach (var value in values)
             {
-                WriteCellValueAndAdvance(value);
+                WriteNext(value);
             }
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return _writer;
         }
 
         public ReadOnlyMemory<byte> GetColumnData()
@@ -188,7 +206,20 @@ public partial class NativeFormatBlockWriter
                 throw new InvalidOperationException("Attempted to get column data before all rows were written.");
             }
 
-            return _writer.GetColumnSlice(_startOffset, _rows * 8);
+            EnsureSegmentAdded();
+            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
+        }
+
+        private void EnsureSegmentAdded()
+        {
+            if (_segmentAdded)
+            {
+                return;
+            }
+
+            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
+            _writer.AddSegment(segment, _buffer);
+            _segmentAdded = true;
         }
     }
 }

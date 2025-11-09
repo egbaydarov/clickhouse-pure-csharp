@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -11,7 +12,7 @@ namespace Clickhouse.Pure.Columns;
 
 public partial class NativeFormatBlockReader
 {
-    public LowCardinalityStringColumnReader AdvanceLowCardinalityStringColumn()
+    public LowCardinalityStringColumnReader ReadLowCardinalityStringColumn()
     {
         if (_columnsRead >= _columnsCount)
         {
@@ -28,7 +29,7 @@ public partial class NativeFormatBlockReader
                 $"Column type mismatch. Expected LowCardinality(String) for column '{Encoding.UTF8.GetString(name)}', but got '{Encoding.UTF8.GetString(type)}'.");
         }
 
-        return LowCardinalityStringColumnReader.CreateAndAdvance(_buffer.Span, ref _offset, (int)_rowsCount);
+        return LowCardinalityStringColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
     }
 
     public ref struct LowCardinalityStringColumnReader : ISequentialColumnReader<string>
@@ -49,7 +50,7 @@ public partial class NativeFormatBlockReader
             _index = 0;
         }
 
-        public static LowCardinalityStringColumnReader CreateAndAdvance(ReadOnlySpan<byte> data, scoped ref int offset,
+        public static LowCardinalityStringColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset,
             int rows)
         {
             // Format per ClickHouse Native (see ch-go proto ColLowCardinality):
@@ -126,7 +127,7 @@ public partial class NativeFormatBlockReader
 
         public bool HasMoreRows() => _index < _rows;
 
-        public string GetCellValueAndAdvance()
+        public string ReadNext()
         {
             if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
             int key;
@@ -156,50 +157,53 @@ public partial class NativeFormatBlockReader
 
 public partial class NativeFormatBlockWriter
 {
-    public LowCardinalityStringColumnWriter AdvanceLowCardinalityStringColumnWriter(string columnName)
+    public LowCardinalityStringColumnWriter CreateLowCardinalityStringColumnWriter(string columnName)
     {
         WriteColumnHeader(columnName, "LowCardinality(String)");
         return LowCardinalityStringColumnWriter.Create(this, checked((int)_rowsCount));
     }
 
-    public ref struct LowCardinalityStringColumnWriter : ISequentialColumnWriter<string>
+    public ref struct LowCardinalityStringColumnWriter : ISequentialColumnWriter<string, LowCardinalityStringColumnWriter>
     {
         private NativeFormatBlockWriter _writer;
         private readonly int _rows;
-        private readonly int _dataStart;
         private readonly Dictionary<string, int> _lookup;
         private readonly List<string> _dictionary;
         private readonly int[] _keys;
+        private byte[] _buffer;
+        private int _offset;
         private int _index;
-        private int _dataEnd;
         private bool _encoded;
+        private bool _segmentAdded;
 
         private LowCardinalityStringColumnWriter(
             NativeFormatBlockWriter writer,
             int rows,
-            int dataStart)
+            byte[] buffer)
         {
             _writer = writer;
             _rows = rows;
-            _dataStart = dataStart;
             _lookup = new Dictionary<string, int>(StringComparer.Ordinal);
             _dictionary = new List<string>();
             _keys = new int[rows];
+            _buffer = buffer;
+            _offset = 0;
             _index = 0;
-            _dataEnd = -1;
             _encoded = false;
+            _segmentAdded = false;
         }
 
         internal static LowCardinalityStringColumnWriter Create(
             NativeFormatBlockWriter writer,
             int rows)
         {
-            return new LowCardinalityStringColumnWriter(writer, rows, writer.CurrentOffset);
+            var buffer = ArrayPool<byte>.Shared.Rent(Math.Max(1024, rows * 8));
+            return new LowCardinalityStringColumnWriter(writer, rows, buffer);
         }
 
         public int Length => _rows;
 
-        public void WriteCellValueAndAdvance(string value)
+        public LowCardinalityStringColumnWriter WriteNext(string value)
         {
             if (_index >= _rows)
             {
@@ -214,15 +218,29 @@ public partial class NativeFormatBlockWriter
             }
 
             _keys[_index++] = key;
+
+            if (_index == _rows && !_segmentAdded)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return this;
         }
 
-        public void WriteCellValuesAndAdvance(IEnumerable<string> values)
+        public NativeFormatBlockWriter WriteAll(IEnumerable<string> values)
         {
             if (values is null) throw new ArgumentNullException(nameof(values));
             foreach (var value in values)
             {
-                WriteCellValueAndAdvance(value);
+                WriteNext(value);
             }
+
+            if (_index == _rows && !_segmentAdded)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return _writer;
         }
 
         public ReadOnlyMemory<byte> GetColumnData()
@@ -232,16 +250,35 @@ public partial class NativeFormatBlockWriter
                 throw new InvalidOperationException("Attempted to get column data before all rows were written.");
             }
 
-            if (!_encoded)
-            {
-                Encode();
-            }
-
-            return _writer.GetColumnSlice(_dataStart, _dataEnd - _dataStart);
+            EnsureSegmentAdded();
+            return new ReadOnlyMemory<byte>(_buffer, 0, _offset);
         }
 
-        private void Encode()
+        private void EnsureSegmentAdded()
         {
+            if (_segmentAdded)
+            {
+                return;
+            }
+
+            EncodeIfNecessary();
+            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _offset);
+            _writer.AddSegment(segment, _buffer);
+            _segmentAdded = true;
+        }
+
+        private void EncodeIfNecessary()
+        {
+            if (_encoded)
+            {
+                return;
+            }
+
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Cannot encode LowCardinality column before all rows are written.");
+            }
+
             const long CardinalityKeyVersion = 1;
             const long CardinalityUpdateAll = (1L << 9) | (1L << 10);
 
@@ -263,53 +300,59 @@ public partial class NativeFormatBlockWriter
                 _ => throw new InvalidOperationException("Unsupported key width for low cardinality column.")
             };
 
-            _writer.WriteInt64Le(CardinalityKeyVersion);
-            _writer.WriteInt64Le(CardinalityUpdateAll | keyFlag);
-            _writer.WriteInt64Le(dictionaryCount);
+            EnsureCapacity(_offset + 24);
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), CardinalityKeyVersion);
+            _offset += 8;
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), CardinalityUpdateAll | keyFlag);
+            _offset += 8;
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), dictionaryCount);
+            _offset += 8;
 
             foreach (var entry in _dictionary)
             {
-                _writer.WriteUtf8StringValue(entry);
+                EnsureCapacity(_offset + NativeFormatBlockWriter.MaxVarintLen64 + Encoding.UTF8.GetByteCount(entry));
+                _offset += NativeFormatBlockWriter.WriteUtf8StringValue(_buffer.AsSpan(_offset), entry);
             }
 
-            _writer.WriteInt64Le(_rows);
+            EnsureCapacity(_offset + 8);
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), _rows);
+            _offset += 8;
 
-            var keysStart = _writer.ReserveFixedSizeColumn(_rows, keyWidth);
+            var keyBytes = _rows * keyWidth;
+            EnsureCapacity(_offset + keyBytes);
+            var keysSpan = _buffer.AsSpan(_offset, keyBytes);
+
             switch (keyWidth)
             {
                 case 1:
                 {
-                    var span = _writer.GetWritableSpan(keysStart, _rows);
                     for (var i = 0; i < _rows; i++)
                     {
-                        span[i] = (byte)_keys[i];
+                        keysSpan[i] = (byte)_keys[i];
                     }
                     break;
                 }
                 case 2:
                 {
-                    var span = _writer.GetWritableSpan(keysStart, _rows * 2);
                     for (var i = 0; i < _rows; i++)
                     {
-                        BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(i * 2, 2), (ushort)_keys[i]);
+                        BinaryPrimitives.WriteUInt16LittleEndian(keysSpan.Slice(i * 2, 2), (ushort)_keys[i]);
                     }
                     break;
                 }
                 case 4:
                 {
-                    var span = _writer.GetWritableSpan(keysStart, _rows * 4);
                     for (var i = 0; i < _rows; i++)
                     {
-                        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(i * 4, 4), (uint)_keys[i]);
+                        BinaryPrimitives.WriteUInt32LittleEndian(keysSpan.Slice(i * 4, 4), (uint)_keys[i]);
                     }
                     break;
                 }
                 case 8:
                 {
-                    var span = _writer.GetWritableSpan(keysStart, _rows * 8);
                     for (var i = 0; i < _rows; i++)
                     {
-                        BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(i * 8, 8), (ulong)_keys[i]);
+                        BinaryPrimitives.WriteUInt64LittleEndian(keysSpan.Slice(i * 8, 8), (ulong)_keys[i]);
                     }
                     break;
                 }
@@ -317,8 +360,22 @@ public partial class NativeFormatBlockWriter
                     throw new InvalidOperationException("Unsupported key width for low cardinality column.");
             }
 
-            _dataEnd = _writer.CurrentOffset;
+            _offset += keyBytes;
             _encoded = true;
+        }
+
+        private void EnsureCapacity(int required)
+        {
+            if (required <= _buffer.Length)
+            {
+                return;
+            }
+
+            var newSize = Math.Max(_buffer.Length * 2, required);
+            var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
+            _buffer.AsSpan(0, _offset).CopyTo(newBuffer);
+            ArrayPool<byte>.Shared.Return(_buffer);
+            _buffer = newBuffer;
         }
     }
 }

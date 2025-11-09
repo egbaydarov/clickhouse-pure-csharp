@@ -3,6 +3,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -14,14 +15,14 @@ public interface ISequentialColumnReader<out T>
 {
     int Length { get; }
     bool HasMoreRows();
-    T GetCellValueAndAdvance();
+    T ReadNext();
 }
 
-public interface ISequentialColumnWriter<in T>
+public interface ISequentialColumnWriter<in T, out TWriter> where TWriter : allows ref struct
 {
     int Length { get; }
-    void WriteCellValueAndAdvance(T value);
-    void WriteCellValuesAndAdvance(IEnumerable<T> values);
+    TWriter WriteNext(T value);
+    NativeFormatBlockWriter WriteAll(IEnumerable<T> values);
     ReadOnlyMemory<byte> GetColumnData();
 }
 
@@ -153,7 +154,6 @@ public partial class NativeFormatBlockReader
 public partial class NativeFormatBlockWriter : IDisposable
 {
     private const int MaxVarintLen64 = 10;
-    private int _offset;
     private static readonly long[] Pow10 =
     [
         1L, 10L, 100L, 1_000L, 10_000L, 100_000L, 1_000_000L,
@@ -162,102 +162,46 @@ public partial class NativeFormatBlockWriter : IDisposable
 
     private readonly ulong _columnsCount;
     private readonly ulong _rowsCount;
-    private byte[] _buffer;
     private ulong _columnsWritten;
+    private readonly List<ReadOnlyMemory<byte>> _segments = new();
+    private readonly List<byte[]> _pooledSegments = new();
 
     public NativeFormatBlockWriter(
-        ulong columnsCount,
-        ulong rowsCount,
-        int minByteSize = 969)
+        int columnsCount,
+        int rowsCount)
     {
-        _buffer = ArrayPool<byte>.Shared.Rent(minByteSize);
-        _offset = 0;
+        if (columnsCount < 1 || rowsCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(columnsCount));
+        }
 
-        _columnsCount = columnsCount;
-        _rowsCount = rowsCount;
+        _columnsCount = (ulong)columnsCount;
+        _rowsCount = (ulong)rowsCount;
         _columnsWritten = 0;
 
         WriteBlockHeader(
-            columnsCount: columnsCount,
-            rowsCount: rowsCount);
+            columnsCount: (ulong)columnsCount,
+            rowsCount: (ulong)rowsCount);
     }
 
     public void Dispose()
     {
-        Free();
+        ReturnPooledSegments();
         GC.SuppressFinalize(this);
     }
 
     ~NativeFormatBlockWriter()
     {
-        Free();
+        ReturnPooledSegments();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void EnsureCapacity(
-        int additional)
+    private void AddSegment(ReadOnlyMemory<byte> segment, byte[]? rentedBuffer = null)
     {
-        if (additional < 0)
+        _segments.Add(segment);
+        if (rentedBuffer is not null)
         {
-            throw new ArgumentOutOfRangeException(nameof(additional));
-        }
-
-        lock (this)
-        {
-            var required = _offset + additional;
-            if (required <= _buffer.Length)
-            {
-                return;
-            }
-
-            var newSize = _buffer.Length;
-            const int maxArrayLength = 2147483591;
-
-            do
-            {
-                var nextSize = newSize <= maxArrayLength / 2 ? newSize * 2 : maxArrayLength;
-                if (nextSize == newSize)
-                {
-                    // Cannot grow further.
-                    if (required > newSize)
-                    {
-                        throw new InvalidOperationException("block too big, above 2GB");
-                    }
-                    break;
-                }
-
-                newSize = nextSize;
-            } while (newSize < required);
-
-            if (newSize < required)
-            {
-                throw new InvalidOperationException("block too big, above 2GB");
-            }
-
-            var newArr = ArrayPool<byte>.Shared.Rent(newSize);
-            if (_offset != 0)
-            {
-                Buffer.BlockCopy(_buffer, 0, newArr, 0, _offset);
-            }
-
-            ArrayPool<byte>.Shared.Return(_buffer);
-
-            _buffer = newArr;
-        }
-    }
-
-    private void Free()
-    {
-        lock (this)
-        {
-            var buffer = _buffer;
-            if (buffer == null!)
-            {
-                return;
-            }
-
-            _buffer = null!;
-            ArrayPool<byte>.Shared.Return(buffer);
+            _pooledSegments.Add(rentedBuffer);
         }
     }
 
@@ -266,54 +210,45 @@ public partial class NativeFormatBlockWriter : IDisposable
         ulong columnsCount,
         ulong rowsCount)
     {
-        WriteUVarInt(columnsCount);
-        WriteUVarInt(rowsCount);
+        var buffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2);
+        var offset = 0;
+        
+        offset += WriteUVarInt(buffer.AsSpan(offset), columnsCount);
+        offset += WriteUVarInt(buffer.AsSpan(offset), rowsCount);
+        
+        AddSegment(buffer.AsMemory(0, offset), buffer);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteUVarInt(ulong value)
+    private static int WriteUVarInt(Span<byte> destination, ulong value)
     {
-        EnsureCapacity(MaxVarintLen64);
-
-        var span = _buffer;
-        var offset = _offset; // keep local for better JIT
-
-        // Emit 7 bits at a time with the continuation bit set, until the last byte.
+        var offset = 0;
         while (value >= 0x80)
         {
-            span[offset++] = (byte)((uint)value | 0x80); // low 7 bits + continuation
+            destination[offset++] = (byte)((uint)value | 0x80);
             value >>= 7;
         }
-        span[offset++] = (byte)value;
-
-        _offset = offset;
+        destination[offset++] = (byte)value;
+        return offset;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteInt64Le(
-        long value)
+    private static void WriteInt64Le(Span<byte> destination, long value)
     {
-        EnsureCapacity(8);
-        BinaryPrimitives.WriteInt64LittleEndian(new Span<byte>(_buffer, _offset, 8), value);
-        _offset += 8;
+        BinaryPrimitives.WriteInt64LittleEndian(destination, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteHeaderString(
-        string str)
+    private static int WriteHeaderString(Span<byte> destination, string str)
     {
         var byteCount = Encoding.UTF8.GetByteCount(str);
-        WriteUVarInt((ulong)byteCount);
-        EnsureCapacity(byteCount);
-
-        var offset = _offset;
-        _offset += Encoding.UTF8.GetBytes(
-            chars: str.AsSpan(),
-            bytes: new Span<byte>(_buffer, offset, byteCount));
+        var offset = WriteUVarInt(destination, (ulong)byteCount);
+        offset += Encoding.UTF8.GetBytes(str.AsSpan(), destination.Slice(offset));
+        return offset;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void WriteColumnHeader(
+    private void WriteColumnHeader(
         string columnName,
         string typeName)
     {
@@ -322,65 +257,56 @@ public partial class NativeFormatBlockWriter : IDisposable
             throw new InvalidOperationException("All declared columns have already been written.");
         }
 
-        WriteHeaderString(columnName);
-        WriteHeaderString(typeName);
+        var nameByteCount = Encoding.UTF8.GetByteCount(columnName);
+        var typeByteCount = Encoding.UTF8.GetByteCount(typeName);
+        var buffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2 + nameByteCount + typeByteCount);
+        
+        var offset = 0;
+        offset += WriteHeaderString(buffer.AsSpan(offset), columnName);
+        offset += WriteHeaderString(buffer.AsSpan(offset), typeName);
+        
+        AddSegment(buffer.AsMemory(0, offset), buffer);
         _columnsWritten++;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int ReserveFixedSizeColumn(
-        int rows,
-        int valueSize)
-    {
-        if (rows < 0) throw new ArgumentOutOfRangeException(nameof(rows));
-        if (valueSize < 0) throw new ArgumentOutOfRangeException(nameof(valueSize));
-
-        var total = (long)rows * valueSize;
-        if (total < 0 || total > int.MaxValue)
-        {
-            throw new InvalidOperationException("Requested column size exceeds supported limits.");
-        }
-
-        var additional = (int)total;
-        EnsureCapacity(additional);
-        var start = _offset;
-        _offset += additional;
-        return start;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal Span<byte> GetWritableSpan(
-        int start,
-        int length)
-    {
-        if ((uint)start > (uint)_buffer.Length) throw new ArgumentOutOfRangeException(nameof(start));
-        if (length < 0 || start + length > _buffer.Length)
-            throw new ArgumentOutOfRangeException(nameof(length));
-
-        return new Span<byte>(_buffer, start, length);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ReadOnlyMemory<byte> GetColumnSlice(
-        int start,
-        int length)
-    {
-        if ((uint)start > (uint)_buffer.Length) throw new ArgumentOutOfRangeException(nameof(start));
-        if (length < 0 || start + length > _buffer.Length)
-            throw new ArgumentOutOfRangeException(nameof(length));
-
-        return new ReadOnlyMemory<byte>(_buffer, start, length);
     }
 
     public ReadOnlyMemory<byte> GetWrittenBuffer()
     {
-        return new ReadOnlyMemory<byte>(_buffer, 0, _offset);
+        if (_segments.Count == 0)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+        
+        if (_segments.Count == 1)
+        {
+            return _segments[0];
+        }
+        
+        // Merge all segments into a single buffer
+        var totalSize = _segments.Sum(s => s.Length);
+        var merged = new byte[totalSize];
+        var offset = 0;
+        
+        foreach (var segment in _segments)
+        {
+            segment.Span.CopyTo(merged.AsSpan(offset));
+            offset += segment.Length;
+        }
+
+        ReturnPooledSegments();
+        _segments.Clear();
+        var mergedMemory = merged.AsMemory();
+        _segments.Add(mergedMemory);
+        
+        return mergedMemory;
     }
 
-    internal int CurrentOffset => _offset;
+    public IEnumerable<ReadOnlyMemory<byte>> GetBlockData()
+    {
+        return _segments;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void WriteUtf8StringValue(string value)
+    private static int WriteUtf8StringValue(Span<byte> destination, string value)
     {
         if (value is null)
         {
@@ -388,21 +314,24 @@ public partial class NativeFormatBlockWriter : IDisposable
         }
 
         var byteCount = Encoding.UTF8.GetByteCount(value);
-        WriteUVarInt((ulong)byteCount);
-        EnsureCapacity(byteCount);
-
-        var written = Encoding.UTF8.GetBytes(
-            chars: value.AsSpan(),
-            bytes: new Span<byte>(_buffer, _offset, byteCount));
-        _offset += written;
+        var offset = WriteUVarInt(destination, (ulong)byteCount);
+        offset += Encoding.UTF8.GetBytes(value.AsSpan(), destination.Slice(offset));
+        return offset;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool MatchesType(
-        ReadOnlySpan<byte> actual,
-        ReadOnlySpan<byte> expected)
+    private void ReturnPooledSegments()
     {
-        return actual.SequenceEqual(expected);
+        if (_pooledSegments.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var buffer in _pooledSegments)
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        _pooledSegments.Clear();
     }
 }
 
@@ -432,27 +361,27 @@ public static class DateOnlyExt
     private const int UnixEpochDayNumber = 719162;
 }
 
-public static class IPAddressExt
+public static class IpAddressExt
 {
-    private const int IPv4Length = 4;
+    private const int Ipv4Length = 4;
 
     public static IPAddress FromLittleEndianIPv4(ReadOnlySpan<byte> span)
     {
-        if (span.Length < IPv4Length)
+        if (span.Length < Ipv4Length)
         {
             throw new ArgumentOutOfRangeException(nameof(span), "IPv4 span must be at least 4 bytes long.");
         }
 
         var bigEndian = BinaryPrimitives.ReadUInt32LittleEndian(span);
-        Span<byte> buffer = stackalloc byte[IPv4Length];
+        Span<byte> buffer = stackalloc byte[Ipv4Length];
         BinaryPrimitives.WriteUInt32BigEndian(buffer, bigEndian);
         return new IPAddress(buffer);
     }
 
     public static void WriteLittleEndianIPv4(Span<byte> destination, IPAddress value)
     {
-        Span<byte> buffer = stackalloc byte[IPv4Length];
-        if (!value.TryWriteBytes(buffer, out var written) || written != IPv4Length)
+        Span<byte> buffer = stackalloc byte[Ipv4Length];
+        if (!value.TryWriteBytes(buffer, out var written) || written != Ipv4Length)
         {
             throw new InvalidOperationException("Failed to write IPv4 address bytes.");
         }

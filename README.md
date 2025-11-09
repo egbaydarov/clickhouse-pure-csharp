@@ -4,8 +4,8 @@
 The `NativeFormatBlockReader` component consumes ClickHouse Native protocol blocks delivered via gRPC. Only the column encodings enumerated in Section 3 are defined. Any other column type MUST be treated as unsupported.
 
 ### 2. Reader Contract
-* Invocation of `Advance*Column()` MUST occur in the order columns are encoded. Each call consumes the column header (`name`, `type`) and returns an `ISequentialColumnReader<T>`.
-* Column readers expose `Length`, `HasMoreRows()`, and `GetCellValueAndAdvance()`. Callers MUST iterate sequentially and MUST NOT read past `Length` rows.
+* Invocation of `Read*Column()` MUST occur in the order columns are encoded. Each call consumes the column header (`name`, `type`) and returns an `ISequentialColumnReader<T>`.
+* Column readers expose `Length`, `HasMoreRows()`, and `ReadNext()`. Callers MUST iterate sequentially and MUST NOT read past `Length` rows.
 * Unless stated otherwise, values are decoded using little-endian primitives and UTF-8 text.
 
 ### 3. Supported Column Kinds

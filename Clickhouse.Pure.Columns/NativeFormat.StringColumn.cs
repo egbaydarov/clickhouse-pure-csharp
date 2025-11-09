@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 
@@ -6,7 +7,7 @@ namespace Clickhouse.Pure.Columns;
 
 public partial class NativeFormatBlockReader
 {
-    public StringColumnReader AdvanceStringColumn()
+    public StringColumnReader ReadStringColumn()
     {
         if (_columnsRead >= _columnsCount)
         {
@@ -19,7 +20,7 @@ public partial class NativeFormatBlockReader
         _columnsRead++;
         if (!MatchesType(type, "String"u8))
             throw new InvalidOperationException($"Column type mismatch. Expected String for column '{Encoding.UTF8.GetString(name)}',  but got '{Encoding.UTF8.GetString(type)}'.");
-        return StringColumnReader.CreateAndAdvance(_buffer.Span, ref _offset, (int)_rowsCount);
+        return StringColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
     }
 
     public ref struct StringColumnReader : ISequentialColumnReader<string>
@@ -37,7 +38,7 @@ public partial class NativeFormatBlockReader
             _index = 0;
         }
 
-        public static StringColumnReader CreateAndAdvance(ReadOnlySpan<byte> data, scoped ref int offset, int rows)
+        public static StringColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset, int rows)
         {
             var start = offset;
             var tmp = offset;
@@ -56,7 +57,7 @@ public partial class NativeFormatBlockReader
 
         public bool HasMoreRows() => _index < _rows;
 
-        public string GetCellValueAndAdvance()
+        public string ReadNext()
         {
             if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
             _index++;
@@ -71,59 +72,77 @@ public partial class NativeFormatBlockReader
 
 public partial class NativeFormatBlockWriter
 {
-    public StringColumnWriter AdvanceStringColumnWriter(string columnName)
+    public StringColumnWriter CreateStringColumnWriter(string columnName)
     {
         WriteColumnHeader(columnName, "String");
         return StringColumnWriter.Create(this, checked((int)_rowsCount));
     }
 
-    public ref struct StringColumnWriter : ISequentialColumnWriter<string>
+    public ref struct StringColumnWriter : ISequentialColumnWriter<string, StringColumnWriter>
     {
+        private const int InitialCapacity = 1024;
+
         private NativeFormatBlockWriter _writer;
         private readonly int _rows;
-        private readonly int _dataStart;
+        private byte[] _buffer;
+        private int _offset;
         private int _index;
-        private int _dataEnd;
+        private bool _segmentAdded;
 
-        private StringColumnWriter(NativeFormatBlockWriter writer, int rows, int dataStart)
+        private StringColumnWriter(NativeFormatBlockWriter writer, int rows, byte[] buffer)
         {
             _writer = writer;
             _rows = rows;
-            _dataStart = dataStart;
+            _buffer = buffer;
+            _offset = 0;
             _index = 0;
-            _dataEnd = -1;
+            _segmentAdded = false;
         }
 
         internal static StringColumnWriter Create(NativeFormatBlockWriter writer, int rows)
         {
-            return new StringColumnWriter(writer, rows, writer.CurrentOffset);
+            var initial = Math.Max(InitialCapacity, rows * 4);
+            var buffer = ArrayPool<byte>.Shared.Rent(initial);
+            return new StringColumnWriter(writer, rows, buffer);
         }
 
         public int Length => _rows;
 
-        public void WriteCellValueAndAdvance(string value)
+        public StringColumnWriter WriteNext(string value)
         {
             if (_index >= _rows)
             {
                 throw new InvalidOperationException("No more rows to write.");
             }
 
-            _writer.WriteUtf8StringValue(value);
+            var byteCount = Encoding.UTF8.GetByteCount(value);
+            EnsureCapacity(_offset + NativeFormatBlockWriter.MaxVarintLen64 + byteCount);
+
+            _offset += NativeFormatBlockWriter.WriteUtf8StringValue(_buffer.AsSpan(_offset), value);
             _index++;
 
             if (_index == _rows)
             {
-                _dataEnd = _writer.CurrentOffset;
+                EnsureSegmentAdded();
             }
+
+            return this;
         }
 
-        public void WriteCellValuesAndAdvance(IEnumerable<string> values)
+        public NativeFormatBlockWriter WriteAll(IEnumerable<string> values)
         {
             if (values is null) throw new ArgumentNullException(nameof(values));
             foreach (var value in values)
             {
-                WriteCellValueAndAdvance(value);
+                WriteNext(value);
             }
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return _writer;
         }
 
         public ReadOnlyMemory<byte> GetColumnData()
@@ -133,12 +152,34 @@ public partial class NativeFormatBlockWriter
                 throw new InvalidOperationException("Attempted to get column data before all rows were written.");
             }
 
-            if (_dataEnd < 0)
+            EnsureSegmentAdded();
+            return new ReadOnlyMemory<byte>(_buffer, 0, _offset);
+        }
+
+        private void EnsureCapacity(int required)
+        {
+            if (required <= _buffer.Length)
             {
-                _dataEnd = _writer.CurrentOffset;
+                return;
             }
 
-            return _writer.GetColumnSlice(_dataStart, _dataEnd - _dataStart);
+            var newSize = Math.Max(_buffer.Length * 2, required);
+            var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
+            _buffer.AsSpan(0, _offset).CopyTo(newBuffer);
+            ArrayPool<byte>.Shared.Return(_buffer);
+            _buffer = newBuffer;
+        }
+
+        private void EnsureSegmentAdded()
+        {
+            if (_segmentAdded)
+            {
+                return;
+            }
+
+            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _offset);
+            _writer.AddSegment(segment, _buffer);
+            _segmentAdded = true;
         }
     }
 }

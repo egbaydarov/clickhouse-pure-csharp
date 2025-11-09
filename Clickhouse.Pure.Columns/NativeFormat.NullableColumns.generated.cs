@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -11,7 +12,7 @@ namespace Clickhouse.Pure.Columns;
 
 public partial class NativeFormatBlockReader
 {
-    public NullableStringColumnReader AdvanceNullableStringColumn()
+    public NullableStringColumnReader ReadNullableStringColumn()
     {
         if (_columnsRead >= _columnsCount)
         {
@@ -25,7 +26,7 @@ public partial class NativeFormatBlockReader
         {
             throw new InvalidOperationException($"Column type mismatch. Expected Nullable(String) for column '{Encoding.UTF8.GetString(name)}',  but got '{Encoding.UTF8.GetString(type)}'.");
         }
-        return NullableStringColumnReader.CreateAndAdvance(_buffer.Span, ref _offset, (int)_rowsCount);
+        return NullableStringColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
     }
 
     public ref struct NullableStringColumnReader : ISequentialColumnReader<string?>
@@ -50,7 +51,7 @@ public partial class NativeFormatBlockReader
 
         public bool HasMoreRows() => _index < _rows;
 
-        public static NullableStringColumnReader CreateAndAdvance(ReadOnlySpan<byte> data, scoped ref int offset,
+        public static NullableStringColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset,
             int rows)
         {
             // Nulls mask first: one byte per row (1 = NULL, 0 = not null)
@@ -73,7 +74,7 @@ public partial class NativeFormatBlockReader
             return new NullableStringColumnReader(data, valuesStart, rows, mask);
         }
 
-        public string? GetCellValueAndAdvance()
+        public string? ReadNext()
         {
             if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
             var isNull = _nullsMask[_index] != 0;
@@ -96,77 +97,95 @@ public partial class NativeFormatBlockReader
 
 public partial class NativeFormatBlockWriter
 {
-    public NullableStringColumnWriter AdvanceNullableStringColumnWriter(string columnName)
+    public NullableStringColumnWriter CreateNullableStringColumnWriter(string columnName)
     {
         WriteColumnHeader(columnName, "Nullable(String)");
         return NullableStringColumnWriter.Create(this, checked((int)_rowsCount));
     }
 
-    public ref struct NullableStringColumnWriter : ISequentialColumnWriter<string?>
+    public ref struct NullableStringColumnWriter : ISequentialColumnWriter<string?, NullableStringColumnWriter>
     {
+        private const int InitialCapacity = 1024;
+
         private NativeFormatBlockWriter _writer;
         private readonly int _rows;
-        private readonly int _maskStart;
-        private readonly int _dataStart;
+        private readonly int _maskLength;
+        private byte[] _buffer;
+        private int _offset;
         private int _index;
-        private int _dataEnd;
+        private bool _segmentAdded;
 
         private NullableStringColumnWriter(
             NativeFormatBlockWriter writer,
             int rows,
-            int maskStart)
+            byte[] buffer)
         {
             _writer = writer;
             _rows = rows;
-            _maskStart = maskStart;
-            _dataStart = maskStart;
+            _maskLength = rows;
+            _buffer = buffer;
+            _offset = rows;
             _index = 0;
-            _dataEnd = -1;
+            _segmentAdded = false;
+            _buffer.AsSpan(0, _maskLength).Clear();
         }
 
         internal static NullableStringColumnWriter Create(
             NativeFormatBlockWriter writer,
             int rows)
         {
-            var maskStart = writer.ReserveFixedSizeColumn(rows, 1);
-            return new NullableStringColumnWriter(writer, rows, maskStart);
+            var initial = Math.Max(rows + 64, InitialCapacity);
+            var buffer = ArrayPool<byte>.Shared.Rent(initial);
+            return new NullableStringColumnWriter(writer, rows, buffer);
         }
 
         public int Length => _rows;
 
-        public void WriteCellValueAndAdvance(string? value)
+        public NullableStringColumnWriter WriteNext(string? value)
         {
             if (_index >= _rows)
             {
                 throw new InvalidOperationException("No more rows to write.");
             }
 
-            var flag = _writer.GetWritableSpan(_maskStart + _index, 1);
+            var maskSpan = _buffer.AsSpan(0, _maskLength);
             if (value is null)
             {
-                flag[0] = 1;
-                _writer.WriteUVarInt(0);
+                maskSpan[_index] = 1;
+                EnsureCapacity(_offset + NativeFormatBlockWriter.MaxVarintLen64);
+                _offset += NativeFormatBlockWriter.WriteUVarInt(_buffer.AsSpan(_offset), 0);
             }
             else
             {
-                flag[0] = 0;
-                _writer.WriteUtf8StringValue(value);
+                maskSpan[_index] = 0;
+                var byteCount = Encoding.UTF8.GetByteCount(value);
+                EnsureCapacity(_offset + NativeFormatBlockWriter.MaxVarintLen64 + byteCount);
+                _offset += NativeFormatBlockWriter.WriteUtf8StringValue(_buffer.AsSpan(_offset), value);
             }
 
             _index++;
             if (_index == _rows)
             {
-                _dataEnd = _writer.CurrentOffset;
+                EnsureSegmentAdded();
             }
+
+            return this;
         }
 
-        public void WriteCellValuesAndAdvance(IEnumerable<string?> values)
+        public NativeFormatBlockWriter WriteAll(IEnumerable<string?> values)
         {
             if (values is null) throw new ArgumentNullException(nameof(values));
             foreach (var value in values)
             {
-                WriteCellValueAndAdvance(value);
+                WriteNext(value);
             }
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return _writer;
         }
 
         public ReadOnlyMemory<byte> GetColumnData()
@@ -176,12 +195,34 @@ public partial class NativeFormatBlockWriter
                 throw new InvalidOperationException("Attempted to get column data before all rows were written.");
             }
 
-            if (_dataEnd < 0)
+            EnsureSegmentAdded();
+            return new ReadOnlyMemory<byte>(_buffer, 0, _offset);
+        }
+
+        private void EnsureCapacity(int required)
+        {
+            if (required <= _buffer.Length)
             {
-                _dataEnd = _writer.CurrentOffset;
+                return;
             }
 
-            return _writer.GetColumnSlice(_dataStart, _dataEnd - _dataStart);
+            var newSize = Math.Max(_buffer.Length * 2, required);
+            var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
+            _buffer.AsSpan(0, _offset).CopyTo(newBuffer);
+            ArrayPool<byte>.Shared.Return(_buffer);
+            _buffer = newBuffer;
+        }
+
+        private void EnsureSegmentAdded()
+        {
+            if (_segmentAdded)
+            {
+                return;
+            }
+
+            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _offset);
+            _writer.AddSegment(segment, _buffer);
+            _segmentAdded = true;
         }
     }
 }
