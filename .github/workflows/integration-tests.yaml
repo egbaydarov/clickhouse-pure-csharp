@@ -76,9 +76,67 @@ jobs:
         if: always()
         run: docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci down -v
 
+  benchmarks:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Start ClickHouse Cluster
+        run: |
+          docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci-bench up -d
+
+      - name: Wait for ClickHouse nodes
+        run: |
+          for port in 8123 8124 8125; do
+            echo "Waiting for ClickHouse node on port ${port}"
+            timeout 180 bash -c "until curl -fsS http://localhost:${port}/ping; do sleep 2; done"
+          done
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Run insert benchmarks
+        run: dotnet run --configuration Release --project Clickhouse.Pure.BenchmarkDotnet/Clickhouse.Pure.BenchmarkDotnet.csproj -- --filter *
+
+      - name: Publish benchmark summary
+        if: always()
+        run: |
+          SUMMARY_FILE=$(find BenchmarkDotNet.Artifacts/results -name '*-report-github.md' -print -quit)
+          if [ -n "$SUMMARY_FILE" ]; then
+            {
+              echo "### ClickHouse Insert Benchmarks"
+              cat "$SUMMARY_FILE"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Benchmark summary not found" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clickhouse-insert-benchmarks
+          path: BenchmarkDotNet.Artifacts
+
+      - name: Stop ClickHouse Cluster
+        if: always()
+        run: docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci-bench down -v
+
   deploy-pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test
+    needs:
+      - test
+      - benchmarks
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -95,7 +153,9 @@ jobs:
 
   publish-nuget:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs:
+      - test
+      - benchmarks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

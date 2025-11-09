@@ -789,7 +789,6 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
         using var writer = new NativeFormatBlockWriter(
             columnsCount: columns.Length,
             rowsCount: rowCount);
-
         writer.CreateUInt8ColumnWriter("UInt8Value").WriteAll(uint8Values);
         writer.CreateUInt16ColumnWriter("UInt16Value").WriteAll(uint16Values);
         writer.CreateUInt32ColumnWriter("UInt32Value").WriteAll(uint32Values);
@@ -809,23 +808,23 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
         writer.CreateIPv4ColumnWriter("IPv4Value").WriteAll(ipv4Values);
         writer.CreateStringColumnWriter("StringValue").WriteAll(stringValues);
         writer.CreateNullableStringColumnWriter("NullableStringValue").WriteAll(nullableStringValues);
-        
-        var lowCardColumn = writer.CreateLowCardinalityStringColumnWriter("LowCardValue");
-        foreach (var value in lowCardValues)
-        {
-            lowCardColumn.WriteNext(value);
-        }
-        lowCardColumn.GetColumnData();
-
+        writer.CreateLowCardinalityStringColumnWriter("LowCardValue").WriteAll(lowCardValues);
         writer.CreateFixedStringColumnWriter("FixedStringValue", 8).WriteAll(fixedStringValues);
+        await _sut.InsertNativePayloadAsync(
+            tableName: _tableName,
+            payload: writer.GetWrittenBuffer());
 
-        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
-
-        (await _sut.FetchCsvColumnAsync(_tableName, "UInt8Value", s => byte.Parse(s, CultureInfo.InvariantCulture)))
+        (await _sut.FetchCsvColumnAsync(
+                tableName: _tableName,
+                columnExpression: "UInt8Value",
+                converter: s => byte.Parse(s, CultureInfo.InvariantCulture)))
             .Should()
             .Equal(uint8Values);
 
-        (await _sut.FetchCsvColumnAsync(_tableName, "UInt16Value", s => ushort.Parse(s, CultureInfo.InvariantCulture)))
+        (await _sut.FetchCsvColumnAsync(
+                tableName: _tableName,
+                columnExpression: "UInt16Value",
+                converter: s => ushort.Parse(s, CultureInfo.InvariantCulture)))
             .Should()
             .Equal(uint16Values);
 
