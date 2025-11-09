@@ -111,12 +111,16 @@ jobs:
       - name: Publish benchmark summary
         if: always()
         run: |
-          SUMMARY_FILE=$(find BenchmarkDotNet.Artifacts/results -name '*-report-github.md' -print -quit)
-          if [ -n "$SUMMARY_FILE" ]; then
-            {
-              echo "### ClickHouse Insert Benchmarks"
-              cat "$SUMMARY_FILE"
-            } >> "$GITHUB_STEP_SUMMARY"
+          if [ -d BenchmarkDotNet.Artifacts/results ]; then
+            SUMMARY_FILE=$(find BenchmarkDotNet.Artifacts/results -name '*-report-github.md' -print -quit)
+            if [ -n "$SUMMARY_FILE" ]; then
+              {
+                echo "### ClickHouse Insert Benchmarks"
+                cat "$SUMMARY_FILE"
+              } >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Benchmark summary not found" >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             echo "Benchmark summary not found" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -127,6 +131,7 @@ jobs:
         with:
           name: clickhouse-insert-benchmarks
           path: BenchmarkDotNet.Artifacts
+          if-no-files-found: ignore
 
       - name: Stop ClickHouse Cluster
         if: always()

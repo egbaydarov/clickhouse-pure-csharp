@@ -25,14 +25,16 @@ public partial class NativeFormatBlockReader
         var name = ReadHeaderString();
         var type = ReadHeaderString();
         _columnsRead++;
-        if (!MatchesType(type.Slice(0, 12), "FixedString()"u8))
+        if (type.Length < 13
+            || !MatchesType(type.Slice(0, 12), "FixedString("u8)
+            || type[^1] != (byte)')')
         {
             throw new InvalidOperationException($"Column type mismatch. Expected FixedString for column '{Encoding.UTF8.GetString(name)}', but got '{Encoding.UTF8.GetString(type)}'.");
         }
 
+        var digits = type.Slice(12, type.Length - 13);
         if (Utf8Parser.TryParse(
-                source: type.Slice(12,
-                length: type.Length - 12),
+                source: digits,
                 value: out int value,
                 bytesConsumed: out _))
         {

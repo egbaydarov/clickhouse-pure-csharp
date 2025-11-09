@@ -13,6 +13,53 @@ public class Sut
         _handler = handler;
     }
 
+    public async Task InsertCsvAsync(
+        string tableName,
+        IEnumerable<string> rows)
+    {
+        if (string.IsNullOrWhiteSpace(tableName))
+        {
+            throw new ArgumentException("Table name must be provided", nameof(tableName));
+        }
+
+        ArgumentNullException.ThrowIfNull(rows);
+        var rowList = rows as IList<string> ?? rows.ToList();
+
+        if (rowList.Count == 0)
+        {
+            throw new ArgumentException("At least one row must be provided.", nameof(rows));
+        }
+
+        var bulkWriter = await _handler.InputBulk(
+            $"INSERT INTO {tableName} FORMAT CSV",
+            "\n");
+
+        try
+        {
+            for (var i = 0; i < rowList.Count; i++)
+            {
+                var payload = Encoding.UTF8.GetBytes(rowList[i]);
+                var hasMore = i < rowList.Count - 1;
+
+                var wrote = await bulkWriter.WriteRowsBulkAsync(payload, hasMore);
+                if (!wrote)
+                {
+                    throw new InvalidOperationException("Failed to write CSV payload.");
+                }
+            }
+
+            var commit = await bulkWriter.Commit();
+            if (commit.IsFailed())
+            {
+                throw commit.Exception!;
+            }
+        }
+        finally
+        {
+            bulkWriter.Dispose();
+        }
+    }
+
     public async Task<string?> GetVersionThrowing()
     {
         var (res, ex) = await _handler.QueryRawString("SELECT VERSION()");
@@ -116,6 +163,16 @@ public class Sut
             .ToArray();
 
         return values;
+    }
+
+    public Task<NativeBulkReader> QueryNativeBulkAsync(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            throw new ArgumentException("Query must be provided.", nameof(query));
+        }
+
+        return _handler.QueryNativeBulk(query);
     }
 
     public async Task DropTableAsync(

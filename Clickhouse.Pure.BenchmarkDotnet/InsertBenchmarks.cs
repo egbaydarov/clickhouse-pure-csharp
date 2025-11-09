@@ -313,10 +313,7 @@ internal sealed class InsertBenchmarkConfig : ManualConfig
     public InsertBenchmarkConfig()
     {
         WithArtifactsPath(Path.Combine(AppContext.BaseDirectory, "BenchmarkDotNet-Artifacts"));
-        AddJob(Job.ShortRun
-            .WithId("Short")
-            .WithCustomBuildConfiguration("Release")
-            .WithMinIterationTime(TimeInterval.FromMilliseconds(100)));
+        AddJob(Job.MediumRun);
 
         AddColumn(TargetMethodColumn.Method, StatisticColumn.Mean, StatisticColumn.P90, StatisticColumn.Error);
         AddDiagnoser(BenchmarkDotNet.Diagnosers.MemoryDiagnoser.Default);
