@@ -88,11 +88,11 @@ public partial class NativeFormatBlockReader
             // TRUNCATE sub-second part to .NET ticks (100 ns). No rounding up into next second.
             var fracTicks = (rem * TimeSpan.TicksPerSecond) / pow; // safe: rem<=1e9-1 => product <= 1e16-1
             var totalTicks = checked(seconds * TimeSpan.TicksPerSecond + fracTicks);
-            var dtUtc = DateTime.UnixEpoch.AddTicks(totalTicks); // Kind=Utc
+            var dtoUtc = new DateTimeOffset(DateTime.UnixEpoch.AddTicks(totalTicks), TimeSpan.Zero);
 
             return _tz.Equals(TimeZoneInfo.Utc)
-                ? dtUtc
-                : TimeZoneInfo.ConvertTimeFromUtc(dtUtc, _tz);
+                ? dtoUtc
+                : TimeZoneInfo.ConvertTime(dtoUtc, _tz);
         }
     }
 }

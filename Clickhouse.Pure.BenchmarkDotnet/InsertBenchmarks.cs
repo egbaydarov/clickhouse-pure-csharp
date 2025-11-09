@@ -1,3 +1,6 @@
+// ReSharper disable MemberCanBePrivate.Global
+// ReSharper disable NotAccessedPositionalProperty.Global
+// ReSharper disable UnusedAutoPropertyAccessor.Global
 using System.Collections.Concurrent;
 using System.Numerics;
 using BenchmarkDotNet.Analysers;
@@ -13,7 +16,6 @@ using Clickhouse.Pure.Columns;
 using Clickhouse.Pure.Grpc;
 using FastMember;
 using Grpc.Core;
-using Perfolizer.Horology;
 
 namespace Clickhouse.Pure.BenchmarkDotnet;
 
@@ -57,10 +59,12 @@ public class InsertBenchmarks
     [Benchmark(Description = "Pure gRPC driver (Native format)")]
     public async Task PureDriver_NativeBulkInsert()
     {
-        using var blockWriter = new NativeFormatBlockWriter(columnsCount: 5, rowsCount: RowCount);
+        using var blockWriter = new NativeFormatBlockWriter(columnsCount: 6, rowsCount: RowCount);
         blockWriter.CreateStringColumnWriter(nameof(BenchmarkRow.StringValue)).WriteAll(_dataset.Strings);
-        blockWriter.CreateInt128ColumnWriter(nameof(BenchmarkRow.Int128Value)).WriteAll(_dataset.Int128s);
-        blockWriter.CreateInt64ColumnWriter(nameof(BenchmarkRow.Int64Value)).WriteAll(_dataset.Int64s);
+        blockWriter.CreateInt128ColumnWriter(nameof(BenchmarkRow.Int128Value)).WriteAll(_dataset.Int128S);
+        blockWriter.CreateInt64ColumnWriter(nameof(BenchmarkRow.Int64Value)).WriteAll(_dataset.Int64S);
+        blockWriter.CreateDateTime64ColumnWriter(nameof(BenchmarkRow.DateTimeValue), scale: 6, timeZone: string.Empty)
+            .WriteAll(_dataset.DateTimes);
         blockWriter.CreateFixedStringColumnWriter(nameof(BenchmarkRow.FixedStringValue), size: 16).WriteAll(_dataset.FixedStrings);
         blockWriter.CreateLowCardinalityStringColumnWriter(nameof(BenchmarkRow.LowCardinalityValue)).WriteAll(_dataset.LowCardinalityStrings);
 
@@ -105,6 +109,7 @@ public class InsertBenchmarks
                 nameof(BenchmarkRow.StringValue),
                 nameof(BenchmarkRow.Int128Value),
                 nameof(BenchmarkRow.Int64Value),
+                nameof(BenchmarkRow.DateTimeValue),
                 nameof(BenchmarkRow.FixedStringValue),
                 nameof(BenchmarkRow.LowCardinalityValue)
             ]
@@ -112,11 +117,12 @@ public class InsertBenchmarks
 
         await bulkCopy.InitAsync().ConfigureAwait(false);
 
-        using var reader = ObjectReader.Create(
+        await using var reader = ObjectReader.Create(
             _dataset.Rows,
             nameof(BenchmarkRow.StringValue),
             nameof(BenchmarkRow.Int128Value),
             nameof(BenchmarkRow.Int64Value),
+            nameof(BenchmarkRow.DateTimeValue),
             nameof(BenchmarkRow.FixedStringValue),
             nameof(BenchmarkRow.LowCardinalityValue));
 
@@ -154,6 +160,7 @@ public class InsertBenchmarks
                              StringValue String,
                              Int128Value Int128,
                              Int64Value Int64,
+                             DateTimeValue DateTime64(6),
                              FixedStringValue FixedString(16),
                              LowCardinalityValue LowCardinality(String)
                          )
@@ -249,12 +256,12 @@ public class SingleColumnInsertBenchmarks
         {
             DestinationTableName = _officialDriverTable,
             BatchSize = RowCount,
-            ColumnNames = new[] { Column.ColumnName }
+            ColumnNames = [Column.ColumnName]
         };
 
         await bulkCopy.InitAsync().ConfigureAwait(false);
 
-        using var reader = ObjectReader.Create(_dataset.Rows, Column.PropertyName);
+        await using var reader = ObjectReader.Create(_dataset.Rows, Column.PropertyName);
         await bulkCopy.WriteToServerAsync(reader).ConfigureAwait(false);
     }
 
@@ -391,13 +398,19 @@ public sealed record ColumnCase(
             "Int64",
             nameof(BenchmarkRow.Int64Value),
             "Int64",
-            (writer, data) => writer.CreateInt64ColumnWriter(nameof(BenchmarkRow.Int64Value)).WriteAll(data.Int64s),
+            (writer, data) => writer.CreateInt64ColumnWriter(nameof(BenchmarkRow.Int64Value)).WriteAll(data.Int64S),
             nameof(BenchmarkRow.Int64Value)),
+        new(
+            "DateTime64(6)",
+            nameof(BenchmarkRow.DateTimeValue),
+            "DateTime64(6)",
+            (writer, data) => writer.CreateDateTime64ColumnWriter(nameof(BenchmarkRow.DateTimeValue), 6, string.Empty).WriteAll(data.DateTimes),
+            nameof(BenchmarkRow.DateTimeValue)),
         new(
             "Int128",
             nameof(BenchmarkRow.Int128Value),
             "Int128",
-            (writer, data) => writer.CreateInt128ColumnWriter(nameof(BenchmarkRow.Int128Value)).WriteAll(data.Int128s),
+            (writer, data) => writer.CreateInt128ColumnWriter(nameof(BenchmarkRow.Int128Value)).WriteAll(data.Int128S),
             nameof(BenchmarkRow.Int128Value)),
         new(
             "FixedString(16)",
@@ -419,23 +432,26 @@ public sealed class BenchmarkDataset
     internal BenchmarkDataset(
         IReadOnlyList<BenchmarkRow> rows,
         string[] strings,
-        Int128[] int128s,
-        long[] int64s,
+        Int128[] int128S,
+        long[] int64S,
+        DateTimeOffset[] dateTimes,
         string[] fixedStrings,
         string[] lowCardinalityStrings)
     {
         Rows = rows;
         Strings = strings;
-        Int128s = int128s;
-        Int64s = int64s;
+        Int128S = int128S;
+        Int64S = int64S;
+        DateTimes = dateTimes;
         FixedStrings = fixedStrings;
         LowCardinalityStrings = lowCardinalityStrings;
     }
 
     internal IReadOnlyList<BenchmarkRow> Rows { get; }
     internal string[] Strings { get; }
-    internal Int128[] Int128s { get; }
-    internal long[] Int64s { get; }
+    internal Int128[] Int128S { get; }
+    internal long[] Int64S { get; }
+    internal DateTimeOffset[] DateTimes { get; }
     internal string[] FixedStrings { get; }
     internal string[] LowCardinalityStrings { get; }
 }
@@ -453,12 +469,13 @@ internal static class BenchmarkDatasetCache
     {
         var rows = DataFactory.CreateRows(rowCount);
         var strings = rows.Select(r => r.StringValue).ToArray();
-        var int128s = rows.Select(r => r.NativeInt128).ToArray();
-        var int64s = rows.Select(r => r.Int64Value).ToArray();
+        var int128S = rows.Select(r => r.NativeInt128).ToArray();
+        var int64S = rows.Select(r => r.Int64Value).ToArray();
+        var dateTimes = rows.Select(r => r.DateTimeValue).ToArray();
         var fixedStrings = rows.Select(r => r.FixedStringValue).ToArray();
         var lowCardinalityStrings = rows.Select(r => r.LowCardinalityValue).ToArray();
 
-        return new BenchmarkDataset(rows, strings, int128s, int64s, fixedStrings, lowCardinalityStrings);
+        return new BenchmarkDataset(rows, strings, int128S, int64S, dateTimes, fixedStrings, lowCardinalityStrings);
     }
 }
 
@@ -466,6 +483,7 @@ internal sealed record BenchmarkRow(
     string StringValue,
     BigInteger Int128Value,
     long Int64Value,
+    DateTimeOffset DateTimeValue,
     string FixedStringValue,
     string LowCardinalityValue)
 {
@@ -537,6 +555,7 @@ internal static class DataFactory
     {
         var random = new Random(42);
         var rows = new List<BenchmarkRow>(count);
+        var baseDate = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         for (var i = 0; i < count; i++)
         {
@@ -550,11 +569,15 @@ internal static class DataFactory
 
             var fixedString = $"FS_{i:D13}";
             var category = Categories[i % Categories.Length];
+            var secondsOffset = random.NextInt64(-5_000_000, 5_000_000);
+            var fractionalTicks = random.NextInt64(0, TimeSpan.TicksPerSecond);
+            var dateTime = baseDate.AddTicks(secondsOffset * TimeSpan.TicksPerSecond + fractionalTicks);
 
             rows.Add(new BenchmarkRow(
                 name,
                 bigInteger,
                 int64Value,
+                dateTime,
                 fixedString,
                 category));
         }

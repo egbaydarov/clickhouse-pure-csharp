@@ -446,7 +446,7 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
     public async Task DateTime64Column_WithTimeZone_ReadsNativeBlock()
     {
         _tableName = $"default.native_read_datetime64_tz_{Guid.NewGuid():N}";
-        const string timeZone = "Europe/Berlin";
+        const string timeZone = "Europe/Moscow";
         var tzInfo = TimeZoneInfo.FindSystemTimeZoneById(timeZone);
 
         var values = new[]
