@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -62,6 +62,14 @@ jobs:
         if: success()
         run: reportgenerator -reports:"**/coverage.cobertura.xml" -targetdir:coverage-report -reporttypes:Html
 
+      - name: Upload coverage to Codecov
+        if: success()
+        uses: codecov/codecov-action@v4
+        with:
+          files: '**/coverage.cobertura.xml'
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       - name: Upload coverage report artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
@@ -85,6 +93,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -132,6 +142,40 @@ jobs:
           name: clickhouse-insert-benchmarks
           path: BenchmarkDotNet.Artifacts
           if-no-files-found: ignore
+
+      - name: Commit benchmark markdown results
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
+        run: |
+          set -euo pipefail
+          BENCH_DIR="benchmark-artifacts"
+          git rm -rf --quiet "${BENCH_DIR}" 2>/dev/null || true
+          rm -rf "${BENCH_DIR}"
+          mkdir -p "${BENCH_DIR}"
+
+          found=0
+          if [ -d BenchmarkDotNet.Artifacts/results ]; then
+            while IFS= read -r -d '' file; do
+              cp "${file}" "${BENCH_DIR}/"
+              found=1
+            done < <(find BenchmarkDotNet.Artifacts/results -type f -name '*-report-github.md' -print0)
+          fi
+
+          if [ "${found}" -eq 0 ]; then
+            echo "No benchmark markdown reports found; skipping commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A "${BENCH_DIR}"
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "ci: update benchmark artifacts [skip ci]"
+          git push
 
       - name: Stop ClickHouse Cluster
         if: always()
