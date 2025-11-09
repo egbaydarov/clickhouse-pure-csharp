@@ -319,7 +319,8 @@ internal sealed class InsertBenchmarkConfig : ManualConfig
 {
     public InsertBenchmarkConfig()
     {
-        WithArtifactsPath(Path.Combine(AppContext.BaseDirectory, "BenchmarkDotNet-Artifacts"));
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+        WithArtifactsPath(Path.Combine(repositoryRoot, "BenchmarkDotNet.Artifacts"));
         AddJob(Job.MediumRun);
 
         AddColumn(TargetMethodColumn.Method, StatisticColumn.Mean, StatisticColumn.P90, StatisticColumn.Error);
