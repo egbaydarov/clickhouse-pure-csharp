@@ -106,7 +106,7 @@ jobs:
         run: dotnet restore
 
       - name: Run insert benchmarks
-        run: dotnet run --configuration Release --project Clickhouse.Pure.BenchmarkDotnet/Clickhouse.Pure.BenchmarkDotnet.csproj -- --filter *
+        run: dotnet run --configuration Release --project Clickhouse.Pure.BenchmarkDotnet/Clickhouse.Pure.BenchmarkDotnet.csproj -- --filter "*"
 
       - name: Publish benchmark summary
         if: always()
