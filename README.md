@@ -15,10 +15,9 @@
 <img src="https://github.com/egbaydarov/clickhouse-pure-csharp/actions/workflows/integration-tests.yaml/badge.svg?branch=main">
 </a>
 
-<a href="https://codecov.io/gh/egbaydarov/clickhouse-pure-csharp">
-<img src="https://codecov.io/gh/egbaydarov/clickhouse-pure-csharp/graph/badge.svg">
+<a href="https://codecov.io/gh/egbaydarov/clickhouse-pure-csharp" >
+<img src="https://codecov.io/gh/egbaydarov/clickhouse-pure-csharp/graph/badge.svg?token=VS1YDF9ICO"/>
 </a>
-</p>
 
 ## Why this exists
 
