@@ -6,16 +6,18 @@ using Grpc.Core;
 
 namespace Clickhouse.Pure.Grpc;
 
-public sealed class DefaultCallHandler
+public sealed class DefaultCallHandler : IDisposable
 {
     private readonly ClickHouseGrpcRouter _router;
     private readonly QueryInfo _baseQueryInfo;
-    private readonly TimeSpan _defaultTimeout;
+
+    private readonly TimeSpan? _queryTimeout;
     
     public DefaultCallHandler(
         ClickHouseGrpcRouter router,
         string password,
-        string username, TimeSpan defaultTimeout,
+        string username,
+        TimeSpan? queryTimeout = null,
         int compressionLevel = 3,
         string compression = "gzip")
     {
@@ -27,7 +29,7 @@ public sealed class DefaultCallHandler
             TransportCompressionType = compression
         };
         _router = router;
-        _defaultTimeout = defaultTimeout;
+        _queryTimeout = queryTimeout;
     }
 
     public async Task<BulkWriter> InputBulk(
@@ -39,9 +41,9 @@ public sealed class DefaultCallHandler
             {
                 var result = client
                     .ExecuteQueryWithStreamInput(
-                        deadline: DateTime.UtcNow.Add(_defaultTimeout),
+                        deadline: GetQueryDeadline(),
                         cancellationToken: ct);
-
+                
                 await result.RequestStream.WriteAsync(
                     message: new QueryInfo
                     {
@@ -55,7 +57,7 @@ public sealed class DefaultCallHandler
                         InputDataDelimiter = UnsafeByteOperations.UnsafeWrap(
                             bytes: Encoding.UTF8.GetBytes(s: delimiter).AsMemory()),
                     }, cancellationToken: ct);
-
+                
                 return result;
             },
             logHandler: Console.WriteLine);
@@ -96,7 +98,7 @@ public sealed class DefaultCallHandler
                     .ExecuteQuery(
                         request: queryInfo,
                         cancellationToken: ct,
-                        deadline: DateTime.UtcNow.Add(_defaultTimeout));
+                        deadline: GetQueryDeadline());
 
                 return Task.FromResult(result);
             },
@@ -147,7 +149,7 @@ public sealed class DefaultCallHandler
                 var result = client
                     .ExecuteQuery(
                         request: queryInfo,
-                        deadline: DateTime.UtcNow.Add(value: _defaultTimeout),
+                        deadline: GetQueryDeadline(),
                         cancellationToken: ct);
 
                 return Task.FromResult(result: result);
@@ -187,7 +189,7 @@ public sealed class DefaultCallHandler
 
                 var result = client
                     .ExecuteQueryWithStreamOutput(
-                        deadline: DateTime.UtcNow.Add(_defaultTimeout),
+                        deadline: GetQueryDeadline(),
                         request: queryInfo);
 
                 return Task.FromResult(result);
@@ -212,5 +214,15 @@ public sealed class DefaultCallHandler
                     detail: ex.Message,
                     debugException: ex)));
         }
+    }
+
+    private DateTime? GetQueryDeadline()
+    {
+        return _queryTimeout == null ? null : DateTime.UtcNow.Add(_queryTimeout.Value);
+    }
+
+    public void Dispose()
+    {
+        _router.Dispose();
     }
 }

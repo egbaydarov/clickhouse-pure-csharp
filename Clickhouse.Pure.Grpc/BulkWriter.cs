@@ -37,6 +37,11 @@ public class BulkWriter : IDisposable
                         InputData = UnsafeByteOperations.UnsafeWrap(inputData),
                         NextQueryInfo = hasMoreData
                     });
+
+                if (!hasMoreData)
+                {
+                    await _asyncResultWriter.RequestStream.CompleteAsync();
+                }
             }
 
             return true;

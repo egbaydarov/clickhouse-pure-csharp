@@ -23,12 +23,14 @@ public sealed class ClickHouseGrpcRouter : IDisposable
     private volatile List<string> _endpoints;
 
     private FrozenDictionary<string, RoundRobinChannelPool> _channels;
-    private readonly GrpcChannelOptions _channelOptions = new()
+
+    private readonly GrpcChannelOptions _channelOptions;
+    public static readonly GrpcChannelOptions ChannelOptions = new()
     {
         MaxReceiveMessageSize = null, 
         HttpHandler = new SocketsHttpHandler
         {
-            KeepAlivePingDelay = TimeSpan.FromSeconds(15),
+            KeepAlivePingDelay = TimeSpan.FromSeconds(5),
             KeepAlivePingTimeout = TimeSpan.FromSeconds(20),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(10),
             EnableMultipleHttp2Connections = true,
@@ -110,8 +112,8 @@ public sealed class ClickHouseGrpcRouter : IDisposable
         string username = "default",
         string password = "default",
         int poolSize = 1,
-        TimeSpan? connectionTimeout = null,
         bool useSsl = false,
+        TimeSpan? connectionTimeout = null,
         GrpcChannelOptions? channelOptions = null)
     {
         _seedEndpoints = seedEndpoints.Distinct().ToList();
@@ -124,7 +126,7 @@ public sealed class ClickHouseGrpcRouter : IDisposable
         _grpcPort = port;
         _useSsl = useSsl;
 
-        _channelOptions = channelOptions ?? _channelOptions;
+        _channelOptions = channelOptions ?? ChannelOptions;
         _channels = FrozenDictionary<string, RoundRobinChannelPool>.Empty;
 
         InitClusterConnectionPool(
