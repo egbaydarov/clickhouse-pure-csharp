@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Tests
 
 on:
   push:
@@ -22,6 +22,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
+      CLICKHOUSE_VERSION: 25.10
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: default
     steps:
@@ -83,6 +84,58 @@ jobs:
       - name: Stop ClickHouse Cluster
         if: always()
         run: docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci down -v
+
+  compatibility-tests:
+    name: Tests (ClickHouse ${{ matrix.clickhouse-version }})
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - clickhouse-version: '25.9'
+            project-suffix: '259'
+          - clickhouse-version: '25.8'
+            project-suffix: '258'
+          - clickhouse-version: '25.3'
+            project-suffix: '253'
+    runs-on: ubuntu-latest
+    env:
+      CLICKHOUSE_VERSION: ${{ matrix.clickhouse-version }}
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Start ClickHouse Cluster
+        run: |
+          docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci-${{ matrix.project-suffix }} up -d
+
+      - name: Wait for ClickHouse nodes
+        run: |
+          for port in 8123 8124 8125; do
+            echo "Waiting for ClickHouse node on port ${port}"
+            timeout 180 bash -c "until curl -fsS http://localhost:${port}/ping; do sleep 2; done"
+          done
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Run tests
+        run: dotnet test --configuration Release --no-restore
+
+      - name: Capture Docker logs on failure
+        if: failure()
+        run: docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci-${{ matrix.project-suffix }} logs
+
+      - name: Stop ClickHouse Cluster
+        if: always()
+        run: docker compose -f env/clichouse-server/docker-compose.yaml -p clickhouse-ci-${{ matrix.project-suffix }} down -v
 
   benchmarks:
     needs: test

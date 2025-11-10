@@ -17,7 +17,7 @@ services:
       - clickhouse-net
 
   clickhouse-1:
-    image: clickhouse/clickhouse-server:25.10
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.10}
     container_name: clickhouse-1
     hostname: clickhouse-1
     restart: unless-stopped
@@ -47,7 +47,7 @@ services:
       - clickhouse-net
 
   clickhouse-2:
-    image: clickhouse/clickhouse-server:25.10
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.10}
     container_name: clickhouse-2
     hostname: clickhouse-2
     restart: unless-stopped
@@ -77,7 +77,7 @@ services:
       - clickhouse-net
 
   clickhouse-3:
-    image: clickhouse/clickhouse-server:25.10
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.10}
     container_name: clickhouse-3
     hostname: clickhouse-3
     restart: unless-stopped

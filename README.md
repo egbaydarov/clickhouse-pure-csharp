@@ -14,8 +14,8 @@ Less memory allocations, native data format, column oriented API.
 <img alt="NuGet Downloads" src="https://img.shields.io/nuget/dt/Clickhouse.Pure.Grpc">
 </a>
 
-<a href="https://github.com/egbaydarov/clickhouse-pure-csharp/actions/workflows/integration-tests.yaml">
-<img src="https://github.com/egbaydarov/clickhouse-pure-csharp/actions/workflows/integration-tests.yaml/badge.svg?branch=main">
+<a href="https://github.com/egbaydarov/clickhouse-pure-csharp/actions/workflows/tests.yaml">
+<img src="https://github.com/egbaydarov/clickhouse-pure-csharp/actions/workflows/tests.yaml/badge.svg?branch=main">
 </a>
 
 <a href="https://codecov.io/gh/egbaydarov/clickhouse-pure-csharp" >
