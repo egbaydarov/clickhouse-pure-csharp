@@ -10,8 +10,8 @@ using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Exporters;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Loggers;
-using ClickHouse.Client.ADO;
-using ClickHouse.Client.Copy;
+using ClickHouse.Driver.ADO;
+using ClickHouse.Driver.Copy;
 using Clickhouse.Pure.Columns;
 using Clickhouse.Pure.Grpc;
 using FastMember;
@@ -31,7 +31,7 @@ public class InsertBenchmarks
     private string _pureDriverTable = string.Empty;
     private string _officialDriverTable = string.Empty;
 
-    [Params(10_000, 100_000, 1_000_000)]
+    [Params(1_000_000, 10_000_000, 100_000_000)]
     public int RowCount { get; set; }
 
     [GlobalSetup]

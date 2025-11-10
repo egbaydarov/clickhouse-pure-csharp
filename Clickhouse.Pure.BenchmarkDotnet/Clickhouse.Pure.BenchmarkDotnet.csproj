@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.6" />
-    <PackageReference Include="ClickHouse.Client" Version="7.14.0" />
+    <PackageReference Include="ClickHouse.Driver" Version="0.7.20" />
     <PackageReference Include="FastMember" Version="1.5.0" />
   </ItemGroup>
 
