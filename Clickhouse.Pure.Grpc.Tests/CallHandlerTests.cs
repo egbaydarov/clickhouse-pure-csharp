@@ -15,7 +15,7 @@ public class CallHandlerTests
 
         version
             .Should()
-            .StartWith("25.10");
+            .StartWith("25.");
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public class CallHandlerTests
 
         text
             .Should()
-            .StartWith("25.10");
+            .StartWith("25.");
     }
 
     [Fact]

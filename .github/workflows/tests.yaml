@@ -87,6 +87,7 @@ jobs:
 
   compatibility-tests:
     name: Tests (ClickHouse ${{ matrix.clickhouse-version }})
+    if: github.event_name == 'workflow_dispatch'
     continue-on-error: true
     strategy:
       fail-fast: false

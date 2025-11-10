@@ -31,7 +31,7 @@ public class InsertBenchmarks
     private string _pureDriverTable = string.Empty;
     private string _officialDriverTable = string.Empty;
 
-    [Params(1_000_000, 10_000_000, 100_000_000)]
+    [Params(10_000, 100_000, 1_000_000, 10_000_000)]
     public int RowCount { get; set; }
 
     [GlobalSetup]
@@ -321,7 +321,7 @@ internal sealed class InsertBenchmarkConfig : ManualConfig
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
         WithArtifactsPath(Path.Combine(repositoryRoot, "BenchmarkDotNet.Artifacts"));
-        AddJob(Job.MediumRun);
+        AddJob(Job.ShortRun);
 
         AddColumn(TargetMethodColumn.Method, StatisticColumn.Mean, StatisticColumn.P90, StatisticColumn.Error);
         AddDiagnoser(BenchmarkDotNet.Diagnosers.MemoryDiagnoser.Default);
