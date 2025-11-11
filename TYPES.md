@@ -29,3 +29,10 @@
 * `Float32` → `float`
 * `Float64` → `double`
 
+## Decimal Encodings
+* `Decimal32(S)` → `decimal`
+* `Decimal64(S)` → `decimal`
+* `Decimal128(S)` → `Decimal128Value`
+* `Decimal256(S)` → `Decimal256Value`
+* `Decimal(P, S)` → one of the above depending on precision `P` ([ClickHouse Decimal docs](https://clickhouse.com/docs/sql-reference/data-types/decimal))
+

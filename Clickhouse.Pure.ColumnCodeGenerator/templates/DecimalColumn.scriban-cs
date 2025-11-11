@@ -1,0 +1,298 @@
+#nullable enable
+using System;
+using System.Buffers;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+using System.Numerics;
+
+namespace Clickhouse.Pure.Columns;
+
+public partial class NativeFormatBlockReader
+{
+    {{~ for d in DecimalTypes ~}}
+    public {{ d.ClickhouseType }}ColumnReader Read{{ d.ClickhouseType }}Column()
+    {
+        if (_columnsRead >= _columnsCount)
+        {
+            throw new InvalidOperationException("No more columns available in this block.");
+        }
+
+        var name = ReadHeaderString();
+        var type = ReadHeaderString();
+        _columnsRead++;
+        var descriptor = DecimalTypeParser.Parse(type, name, {{ d.StorageBits }});
+
+        return {{ d.ClickhouseType }}ColumnReader.CreateAndConsume(
+            _buffer.Span,
+            ref _offset,
+            (int)_rowsCount,
+            descriptor.Scale,
+            descriptor.Precision);
+    }
+
+    public ref struct {{ d.ClickhouseType }}ColumnReader : ISequentialColumnReader<{{ d.ManagedType }}>
+    {
+        private readonly ReadOnlySpan<byte> _data;
+        private int _offset;
+        private readonly int _rows;
+        private int _index;
+        private readonly int _scale;
+        private readonly int _precision;
+
+        private {{ d.ClickhouseType }}ColumnReader(
+            ReadOnlySpan<byte> data,
+            int startOffset,
+            int rows,
+            int scale,
+            int precision)
+        {
+            _data = data;
+            _offset = startOffset;
+            _rows = rows;
+            _scale = scale;
+            _precision = precision;
+            _index = 0;
+        }
+
+        public static {{ d.ClickhouseType }}ColumnReader CreateAndConsume(
+            ReadOnlySpan<byte> data,
+            scoped ref int offset,
+            int rows,
+            int scale,
+            int precision)
+        {
+            var start = offset;
+            var total = (long)rows * {{ d.ValueSizeInBytes }};
+
+            if (total < 0 || start + total > data.Length)
+            {
+                throw new IndexOutOfRangeException("Decimal column out of range");
+            }
+
+            offset = start + (int)total;
+
+            return new {{ d.ClickhouseType }}ColumnReader(data, start, rows, scale, precision);
+        }
+
+        public int Length => _rows;
+
+        public int Scale => _scale;
+
+        public int Precision => _precision;
+
+        public bool HasMoreRows() => _index < _rows;
+
+{{~ if d.ReturnsDecimal }}
+        public {{ d.ManagedType }} ReadNext()
+        {
+            if (_index >= _rows)
+            {
+                throw new IndexOutOfRangeException("No more values");
+            }
+
+            _index++;
+            if (_offset + {{ d.ValueSizeInBytes }} > _data.Length)
+            {
+                throw new IndexOutOfRangeException("Decimal value out of range");
+            }
+
+{{~ if d.StorageBits == 32 }}
+            var raw = BinaryPrimitives.ReadInt32LittleEndian(_data.Slice(_offset, {{ d.ValueSizeInBytes }}));
+{{~ else }}
+            var raw = BinaryPrimitives.ReadInt64LittleEndian(_data.Slice(_offset, {{ d.ValueSizeInBytes }}));
+{{~ end }}
+            _offset += {{ d.ValueSizeInBytes }};
+{{~ if d.StorageBits == 32 }}
+            return DecimalMath.FromInt32(raw, _scale);
+{{~ else }}
+            return DecimalMath.FromInt64(raw, _scale);
+{{~ end }}
+        }
+{{~ else if d.StorageBits == 128 }}
+        public {{ d.ManagedType }} ReadNext()
+        {
+            if (_index >= _rows)
+            {
+                throw new IndexOutOfRangeException("No more values");
+            }
+
+            _index++;
+            if (_offset + {{ d.ValueSizeInBytes }} > _data.Length)
+            {
+                throw new IndexOutOfRangeException("Decimal value out of range");
+            }
+
+            var raw = BinaryPrimitives.ReadInt128LittleEndian(_data.Slice(_offset, {{ d.ValueSizeInBytes }}));
+            _offset += {{ d.ValueSizeInBytes }};
+            return Decimal128Value.FromUnscaled(raw, _scale);
+        }
+{{~ else }}
+        public {{ d.ManagedType }} ReadNext()
+        {
+            if (_index >= _rows)
+            {
+                throw new IndexOutOfRangeException("No more values");
+            }
+
+            _index++;
+            if (_offset + {{ d.ValueSizeInBytes }} > _data.Length)
+            {
+                throw new IndexOutOfRangeException("Decimal value out of range");
+            }
+
+            var raw = DecimalMath.ReadInt256LittleEndian(_data.Slice(_offset, {{ d.ValueSizeInBytes }}));
+            _offset += {{ d.ValueSizeInBytes }};
+            return Decimal256Value.FromUnscaled(raw, _scale);
+        }
+{{~ end }}
+    }
+    {{~ end }}
+}
+
+public partial class NativeFormatBlockWriter
+{
+    {{~ for d in DecimalTypes ~}}
+    public {{ d.ClickhouseType }}ColumnWriter Create{{ d.ClickhouseType }}ColumnWriter(
+        string columnName,
+        int scale{{~ if d.MinPrecision != d.MaxPrecision }}, int? precision = null{{~ end }})
+    {
+{{~ if d.MinPrecision == d.MaxPrecision }}
+        const int precisionValue = {{ d.MaxPrecision }};
+        DecimalTypeParser.ValidateScaleForPrecision(columnName, "{{ d.ClickhouseType }}", scale, precisionValue);
+        var typeName = $"{{ d.ClickhouseType }}({scale})";
+        WriteColumnHeader(columnName, typeName);
+        return {{ d.ClickhouseType }}ColumnWriter.Create(this, checked((int)_rowsCount), scale, precisionValue);
+{{~ else }}
+        var actualPrecision = precision ?? {{ d.MaxPrecision }};
+        DecimalTypeParser.ValidatePrecision(columnName, "{{ d.ClickhouseType }}", actualPrecision, {{ d.MinPrecision }}, {{ d.MaxPrecision }});
+        DecimalTypeParser.ValidateScaleForPrecision(columnName, "{{ d.ClickhouseType }}", scale, actualPrecision);
+        var typeName = precision is null
+            ? $"{{ d.ClickhouseType }}({scale})"
+            : $"Decimal({actualPrecision}, {scale})";
+        WriteColumnHeader(columnName, typeName);
+        return {{ d.ClickhouseType }}ColumnWriter.Create(this, checked((int)_rowsCount), scale, actualPrecision);
+{{~ end }}
+    }
+
+    public ref struct {{ d.ClickhouseType }}ColumnWriter : ISequentialColumnWriter<{{ d.ManagedType }}, {{ d.ClickhouseType }}ColumnWriter>
+    {
+        private const int ValueSize = {{ d.ValueSizeInBytes }};
+
+        private NativeFormatBlockWriter _writer;
+        private readonly int _rows;
+        private readonly byte[] _buffer;
+        private readonly int _scale;
+        private readonly int _precision;
+        private int _index;
+        private bool _segmentAdded;
+
+        private {{ d.ClickhouseType }}ColumnWriter(
+            NativeFormatBlockWriter writer,
+            int rows,
+            byte[] buffer,
+            int scale,
+            int precision)
+        {
+            _writer = writer;
+            _rows = rows;
+            _buffer = buffer;
+            _scale = scale;
+            _precision = precision;
+            _index = 0;
+            _segmentAdded = false;
+        }
+
+        internal static {{ d.ClickhouseType }}ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            int rows,
+            int scale,
+            int precision)
+        {
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            return new {{ d.ClickhouseType }}ColumnWriter(writer, rows, buffer, scale, precision);
+        }
+
+        public int Length => _rows;
+
+        public int Scale => _scale;
+
+        public int Precision => _precision;
+
+        public {{ d.ClickhouseType }}ColumnWriter WriteNext({{ d.ManagedType }} value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            var dest = _buffer.AsSpan(_index * ValueSize, ValueSize);
+{{~ if d.ReturnsDecimal }}
+{{~ if d.StorageBits == 32 }}
+            var rawValue = DecimalMath.ScaleDecimalToInt32(value, _scale, _precision);
+            BinaryPrimitives.WriteInt32LittleEndian(dest, rawValue);
+{{~ else }}
+            var rawValue = DecimalMath.ScaleDecimalToInt64(value, _scale, _precision);
+            BinaryPrimitives.WriteInt64LittleEndian(dest, rawValue);
+{{~ end }}
+{{~ else if d.StorageBits == 128 }}
+            var normalized = value.WithScale(_scale);
+            DecimalMath.EnsureFitsPrecision(normalized.UnscaledValue, _precision);
+            BinaryPrimitives.WriteInt128LittleEndian(dest, normalized.UnscaledValue);
+{{~ else }}
+            var normalized = value.WithScale(_scale);
+            DecimalMath.EnsureFitsPrecision(normalized.UnscaledValue, _precision);
+            DecimalMath.WriteInt256LittleEndian(dest, normalized.UnscaledValue);
+{{~ end }}
+            _index++;
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return this;
+        }
+
+        public NativeFormatBlockWriter WriteAll(IEnumerable<{{ d.ManagedType }}> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteNext(value);
+            }
+
+            if (_index == _rows)
+            {
+                EnsureSegmentAdded();
+            }
+
+            return _writer;
+        }
+
+        public ReadOnlyMemory<byte> GetColumnData()
+        {
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
+            }
+
+            EnsureSegmentAdded();
+            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
+        }
+
+        private void EnsureSegmentAdded()
+        {
+            if (_segmentAdded)
+            {
+                return;
+            }
+
+            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
+            _writer.AddSegment(segment, _buffer);
+            _segmentAdded = true;
+        }
+    }
+    {{~ end }}
+}
+

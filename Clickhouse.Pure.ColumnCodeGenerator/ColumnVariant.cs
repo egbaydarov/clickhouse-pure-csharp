@@ -15,6 +15,21 @@ public record class NumericColumnVariant(
     }
 }
 
+public record class DecimalColumnVariant(
+    string ClickhouseType,
+    string ManagedType,
+    int ValueSizeInBytes,
+    int StorageBits,
+    int MinPrecision,
+    int MaxPrecision,
+    bool ReturnsDecimal,
+    bool UsesBigInteger)
+{
+    public DecimalColumnVariant() : this("", "", 0, 0, 0, 0, false, false)
+    {
+    }
+}
+
 public record class NullableColumnVariant(
     string? CsharpType,
     string? ClickhouseType)

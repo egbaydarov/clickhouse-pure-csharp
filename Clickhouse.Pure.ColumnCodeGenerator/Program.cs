@@ -1,5 +1,4 @@
-﻿using System.IO;
-using System.Text;
+﻿using System.Text;
 using Scriban;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
@@ -220,6 +219,54 @@ internal static class Program
                 }
             };
 
+            var decimals = new[]
+            {
+                new DecimalColumnVariant
+                {
+                    ClickhouseType = "Decimal32",
+                    ManagedType = "decimal",
+                    ValueSizeInBytes = 4,
+                    StorageBits = 32,
+                    MinPrecision = 1,
+                    MaxPrecision = 9,
+                    ReturnsDecimal = true,
+                    UsesBigInteger = false
+                },
+                new DecimalColumnVariant
+                {
+                    ClickhouseType = "Decimal64",
+                    ManagedType = "decimal",
+                    ValueSizeInBytes = 8,
+                    StorageBits = 64,
+                    MinPrecision = 10,
+                    MaxPrecision = 18,
+                    ReturnsDecimal = true,
+                    UsesBigInteger = false
+                },
+                new DecimalColumnVariant
+                {
+                    ClickhouseType = "Decimal128",
+                    ManagedType = "Decimal128Value",
+                    ValueSizeInBytes = 16,
+                    StorageBits = 128,
+                    MinPrecision = 19,
+                    MaxPrecision = 38,
+                    ReturnsDecimal = false,
+                    UsesBigInteger = false
+                },
+                new DecimalColumnVariant
+                {
+                    ClickhouseType = "Decimal256",
+                    ManagedType = "Decimal256Value",
+                    ValueSizeInBytes = 32,
+                    StorageBits = 256,
+                    MinPrecision = 39,
+                    MaxPrecision = 76,
+                    ReturnsDecimal = false,
+                    UsesBigInteger = true
+                }
+            };
+
             var lowCardinality = new[]
             {
                 new LowCardinalityColumnVariant
@@ -247,6 +294,11 @@ internal static class Program
                     Model: new { NumericTypes = numerics },
                     OutputPath: $"{OutDir}NativeFormat.NumericColumns.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.NumericColumns.generated.cs"),
+                new TemplateJob(
+                    TemplatePath: $"{TemplatesDir}/DecimalColumn.scriban-cs",
+                    Model: new { DecimalTypes = decimals },
+                    OutputPath: $"{OutDir}NativeFormat.DecimalColumns.generated.cs",
+                    SuccessMessage: "Wrote NativeFormat.DecimalColumns.generated.cs"),
 
                 new TemplateJob(
                     TemplatePath: $"{TemplatesDir}/NullableColumn.scriban-cs",

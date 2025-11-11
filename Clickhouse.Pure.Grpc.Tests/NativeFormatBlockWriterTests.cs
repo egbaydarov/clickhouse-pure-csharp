@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Net;
 using AwesomeAssertions;
 using Clickhouse.Pure.Columns;
@@ -675,6 +676,140 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Decimal32Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_decimal32_{Guid.NewGuid():N}";
+        const int scale = 4;
+        var values = new[]
+        {
+            -123.4567m,
+            0m,
+            98765.4321m,
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, $"Decimal32({scale})");
+
+        using var writer = new NativeFormatBlockWriter(
+            columnsCount: 1,
+            rowsCount: values.Length);
+
+        writer
+            .CreateDecimal32ColumnWriter("Value", scale)
+            .WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(
+            _tableName,
+            s => decimal.Parse(s, CultureInfo.InvariantCulture));
+
+        fetched
+            .Should()
+            .Equal(values);
+    }
+
+    [Fact]
+    public async Task Decimal64Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_decimal64_{Guid.NewGuid():N}";
+        const int scale = 6;
+        var values = new[]
+        {
+            -123456789.012345m,
+            0m,
+            987654321.987654m,
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, $"Decimal64({scale})");
+
+        using var writer = new NativeFormatBlockWriter(
+            columnsCount: 1,
+            rowsCount: values.Length);
+
+        writer
+            .CreateDecimal64ColumnWriter("Value", scale)
+            .WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(
+            _tableName,
+            s => decimal.Parse(s, CultureInfo.InvariantCulture));
+
+        fetched
+            .Should()
+            .Equal(values);
+    }
+
+    [Fact]
+    public async Task Decimal128Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_decimal128_{Guid.NewGuid():N}";
+        const int scale = 10;
+        var valueStrings = new[]
+        {
+            "-12345678901234567890.1234567890",
+            "0.0000000000",
+            "98765432109876543210.0987654321",
+        };
+        var values = valueStrings.Select(v => CreateDecimal128Value(v, scale)).ToArray();
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, $"Decimal128({scale})");
+
+        using var writer = new NativeFormatBlockWriter(
+            columnsCount: 1,
+            rowsCount: values.Length);
+
+        writer
+            .CreateDecimal128ColumnWriter("Value", scale)
+            .WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(
+            _tableName,
+            s => CreateDecimal128Value(s, scale));
+
+        fetched
+            .Should()
+            .Equal(values);
+    }
+
+    [Fact]
+    public async Task Decimal256Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_decimal256_{Guid.NewGuid():N}";
+        const int scale = 18;
+        var valueStrings = new[]
+        {
+            "-12345678901234567890123456789012345.123456789012345678",
+            "0.000000000000000000",
+            "98765432109876543210987654321098765.876543210987654321",
+        };
+        var values = valueStrings.Select(v => CreateDecimal256Value(v, scale)).ToArray();
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, $"Decimal256({scale})");
+
+        using var writer = new NativeFormatBlockWriter(
+            columnsCount: 1,
+            rowsCount: values.Length);
+
+        writer
+            .CreateDecimal256ColumnWriter("Value", scale)
+            .WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(
+            _tableName,
+            s => CreateDecimal256Value(s, scale));
+
+        fetched
+            .Should()
+            .Equal(values);
+    }
+
+    [Fact]
     public async Task BoolColumn_RoundTripsNativeBlock()
     {
         _tableName = $"default.native_bool_{Guid.NewGuid():N}";
@@ -718,6 +853,10 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
             ("Int32Value", "Int32"),
             ("Int64Value", "Int64"),
             ("Int128Value", "Int128"),
+            ("Decimal32Value", "Decimal32(4)"),
+            ("Decimal64Value", "Decimal64(6)"),
+            ("Decimal128Value", "Decimal128(10)"),
+            ("Decimal256Value", "Decimal256(18)"),
             ("Float32Value", "Float32"),
             ("Float64Value", "Float64"),
             ("BoolValue", "Bool"),
@@ -753,6 +892,32 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
             Int128.Zero,
             Int128.Parse("12345678901234567890", CultureInfo.InvariantCulture),
         };
+        var decimal32Values = new[]
+        {
+            -123.4567m,
+            0m,
+            98765.4321m,
+        };
+        var decimal64Values = new[]
+        {
+            -123456789.012345m,
+            0m,
+            987654321.987654m,
+        };
+        var decimal128ValueStrings = new[]
+        {
+            "-12345678901234567890.1234567890",
+            "0.0000000000",
+            "98765432109876543210.0987654321",
+        };
+        var decimal128Values = decimal128ValueStrings.Select(v => CreateDecimal128Value(v, scale: 10)).ToArray();
+        var decimal256ValueStrings = new[]
+        {
+            "-12345678901234567890123456789012345.123456789012345678",
+            "0.000000000000000000",
+            "98765432109876543210987654321098765.876543210987654321",
+        };
+        var decimal256Values = decimal256ValueStrings.Select(v => CreateDecimal256Value(v, scale: 18)).ToArray();
         var float32Values = new[] { -1.5f, 0f, 3.25f };
         var float64Values = new[] { -12345.6789, 0.0, 98765.4321 };
         var boolValues = new[] { false, true, false };
@@ -799,6 +964,10 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
         writer.CreateInt32ColumnWriter("Int32Value").WriteAll(int32Values);
         writer.CreateInt64ColumnWriter("Int64Value").WriteAll(int64Values);
         writer.CreateInt128ColumnWriter("Int128Value").WriteAll(int128Values);
+        writer.CreateDecimal32ColumnWriter("Decimal32Value", 4).WriteAll(decimal32Values);
+        writer.CreateDecimal64ColumnWriter("Decimal64Value", 6).WriteAll(decimal64Values);
+        writer.CreateDecimal128ColumnWriter("Decimal128Value", 10).WriteAll(decimal128Values);
+        writer.CreateDecimal256ColumnWriter("Decimal256Value", 18).WriteAll(decimal256Values);
         writer.CreateFloat32ColumnWriter("Float32Value").WriteAll(float32Values);
         writer.CreateFloat64ColumnWriter("Float64Value").WriteAll(float64Values);
         writer.CreateBoolColumnWriter("BoolValue").WriteAll(boolValues);
@@ -860,6 +1029,22 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
             .Should()
             .Equal(int128Values);
 
+        (await _sut.FetchCsvColumnAsync(_tableName, "Decimal32Value", s => decimal.Parse(s, CultureInfo.InvariantCulture)))
+            .Should()
+            .Equal(decimal32Values);
+
+        (await _sut.FetchCsvColumnAsync(_tableName, "Decimal64Value", s => decimal.Parse(s, CultureInfo.InvariantCulture)))
+            .Should()
+            .Equal(decimal64Values);
+
+        (await _sut.FetchCsvColumnAsync(_tableName, "Decimal128Value", s => CreateDecimal128Value(s, 10)))
+            .Should()
+            .Equal(decimal128Values);
+
+        (await _sut.FetchCsvColumnAsync(_tableName, "Decimal256Value", s => CreateDecimal256Value(s, 18)))
+            .Should()
+            .Equal(decimal256Values);
+
         (await _sut.FetchCsvColumnAsync(_tableName, "Float32Value", s => float.Parse(s, CultureInfo.InvariantCulture)))
             .Should()
             .Equal(float32Values);
@@ -905,6 +1090,75 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
         (await _sut.FetchCsvColumnAsync(_tableName, "FixedStringValue", s => s.TrimEnd('\0')))
             .Should()
             .Equal(fixedStringValues);
+    }
+
+    private static Decimal128Value CreateDecimal128Value(string text, int scale)
+    {
+        var (rawValue, fractionDigits) = ParseDecimalComponents(text);
+        if (fractionDigits > scale)
+        {
+            throw new ArgumentException($"Value '{text}' has more fractional digits ({fractionDigits}) than the target scale {scale}.", nameof(text));
+        }
+
+        var adjusted = rawValue * BigInteger.Pow(10, scale - fractionDigits);
+        var unscaledString = adjusted.ToString(CultureInfo.InvariantCulture);
+        var unscaled = Int128.Parse(unscaledString, CultureInfo.InvariantCulture);
+        return Decimal128Value.FromUnscaled(unscaled, scale);
+    }
+
+    private static Decimal256Value CreateDecimal256Value(string text, int scale)
+    {
+        var (rawValue, fractionDigits) = ParseDecimalComponents(text);
+        if (fractionDigits > scale)
+        {
+            throw new ArgumentException($"Value '{text}' has more fractional digits ({fractionDigits}) than the target scale {scale}.", nameof(text));
+        }
+
+        var adjusted = rawValue * BigInteger.Pow(10, scale - fractionDigits);
+        return Decimal256Value.FromUnscaled(adjusted, scale);
+    }
+
+    private static (BigInteger Value, int FractionDigits) ParseDecimalComponents(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException("Decimal text must not be empty.", nameof(text));
+        }
+
+        var trimmed = text.Trim();
+        var sign = 1;
+        if (trimmed.StartsWith("+", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[1..];
+        }
+        else if (trimmed.StartsWith("-", StringComparison.Ordinal))
+        {
+            sign = -1;
+            trimmed = trimmed[1..];
+        }
+
+        var parts = trimmed.Split('.', 2);
+        var integerPart = parts[0];
+        var fractionalPart = parts.Length > 1 ? parts[1] : string.Empty;
+
+        if (integerPart.Length == 0)
+        {
+            integerPart = "0";
+        }
+
+        var digits = integerPart + fractionalPart;
+        if (digits.Length == 0)
+        {
+            digits = "0";
+        }
+
+        var value = BigInteger.Parse(digits, CultureInfo.InvariantCulture);
+        if (sign < 0)
+        {
+            value = BigInteger.Negate(value);
+        }
+
+        return (value, fractionalPart.Length);
     }
 
     private static long ToUnixTimeNanoseconds(DateTimeOffset value)
