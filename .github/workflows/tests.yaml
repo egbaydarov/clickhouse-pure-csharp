@@ -199,7 +199,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Commit benchmark markdown results
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
+        if: github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
         run: |
           set -euo pipefail
           BENCH_DIR="benchmark-artifacts"
