@@ -160,8 +160,13 @@ public partial class NativeFormatBlockWriter
         const int precisionValue = {{ d.MaxPrecision }};
         DecimalTypeParser.ValidateScaleForPrecision(columnName, "{{ d.ClickhouseType }}", scale, precisionValue);
         var typeName = $"{{ d.ClickhouseType }}({scale})";
-        WriteColumnHeader(columnName, typeName);
-        return {{ d.ClickhouseType }}ColumnWriter.Create(this, checked((int)_rowsCount), scale, precisionValue);
+        return {{ d.ClickhouseType }}ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            scale: scale,
+            precision: precisionValue);
 {{~ else }}
         var actualPrecision = precision ?? {{ d.MaxPrecision }};
         DecimalTypeParser.ValidatePrecision(columnName, "{{ d.ClickhouseType }}", actualPrecision, {{ d.MinPrecision }}, {{ d.MaxPrecision }});
@@ -169,8 +174,13 @@ public partial class NativeFormatBlockWriter
         var typeName = precision is null
             ? $"{{ d.ClickhouseType }}({scale})"
             : $"Decimal({actualPrecision}, {scale})";
-        WriteColumnHeader(columnName, typeName);
-        return {{ d.ClickhouseType }}ColumnWriter.Create(this, checked((int)_rowsCount), scale, actualPrecision);
+        return {{ d.ClickhouseType }}ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            scale: scale,
+            precision: actualPrecision);
 {{~ end }}
     }
 
@@ -179,41 +189,29 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = {{ d.ValueSizeInBytes }};
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private readonly int _scale;
         private readonly int _precision;
         private int _index;
-        private bool _segmentAdded;
 
         private {{ d.ClickhouseType }}ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer,
             int scale,
             int precision)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _scale = scale;
             _precision = precision;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static {{ d.ClickhouseType }}ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows,
-            int scale,
-            int precision)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new {{ d.ClickhouseType }}ColumnWriter(writer, rows, buffer, scale, precision);
-        }
-
-        public int Length => _rows;
 
         public int Scale => _scale;
 
@@ -246,11 +244,7 @@ public partial class NativeFormatBlockWriter
 {{~ end }}
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -262,35 +256,32 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static {{ d.ClickhouseType }}ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            string typeName,
+            int rows,
+            int scale,
+            int precision)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: typeName,
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new {{ d.ClickhouseType }}ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer,
+                scale: scale,
+                precision: precision);
         }
     }
     {{~ end }}

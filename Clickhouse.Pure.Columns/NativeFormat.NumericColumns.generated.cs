@@ -1298,8 +1298,10 @@ public partial class NativeFormatBlockWriter
 {
     public Date32ColumnWriter CreateDate32ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Date32");
-        return Date32ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Date32ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Date32ColumnWriter : ISequentialColumnWriter<DateOnly, Date32ColumnWriter>
@@ -1307,33 +1309,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 4;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Date32ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Date32ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Date32ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Date32ColumnWriter WriteNext(DateOnly value)
         {
@@ -1347,11 +1339,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteInt32LittleEndian(dest, days);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -1363,42 +1351,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Date32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Date32",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Date32ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public DateColumnWriter CreateDateColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Date");
-        return DateColumnWriter.Create(this, checked((int)_rowsCount));
+        return DateColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct DateColumnWriter : ISequentialColumnWriter<DateOnly, DateColumnWriter>
@@ -1406,33 +1387,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 2;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private DateColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static DateColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new DateColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public DateColumnWriter WriteNext(DateOnly value)
         {
@@ -1450,11 +1421,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteUInt16LittleEndian(dest, (ushort)days);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -1466,42 +1433,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static DateColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Date",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new DateColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public IPv4ColumnWriter CreateIPv4ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "IPv4");
-        return IPv4ColumnWriter.Create(this, checked((int)_rowsCount));
+        return IPv4ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct IPv4ColumnWriter : ISequentialColumnWriter<IPAddress, IPv4ColumnWriter>
@@ -1509,33 +1469,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 4;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private IPv4ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static IPv4ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new IPv4ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public IPv4ColumnWriter WriteNext(IPAddress value)
         {
@@ -1548,11 +1498,7 @@ public partial class NativeFormatBlockWriter
             IpAddressExt.WriteLittleEndianIPv4(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -1564,42 +1510,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static IPv4ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "IPv4",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new IPv4ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public BoolColumnWriter CreateBoolColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Bool");
-        return BoolColumnWriter.Create(this, checked((int)_rowsCount));
+        return BoolColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct BoolColumnWriter : ISequentialColumnWriter<bool, BoolColumnWriter>
@@ -1607,33 +1546,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 1;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private BoolColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static BoolColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new BoolColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public BoolColumnWriter WriteNext(bool value)
         {
@@ -1646,11 +1575,7 @@ public partial class NativeFormatBlockWriter
             dest[0] = value ? (byte)1 : (byte)0;
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -1662,42 +1587,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static BoolColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Bool",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new BoolColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public UInt8ColumnWriter CreateUInt8ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "UInt8");
-        return UInt8ColumnWriter.Create(this, checked((int)_rowsCount));
+        return UInt8ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct UInt8ColumnWriter : ISequentialColumnWriter<byte, UInt8ColumnWriter>
@@ -1705,33 +1623,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 1;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private UInt8ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static UInt8ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new UInt8ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public UInt8ColumnWriter WriteNext(byte value)
         {
@@ -1744,11 +1652,7 @@ public partial class NativeFormatBlockWriter
             dest[0] = value;
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -1760,42 +1664,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static UInt8ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "UInt8",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new UInt8ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public UInt16ColumnWriter CreateUInt16ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "UInt16");
-        return UInt16ColumnWriter.Create(this, checked((int)_rowsCount));
+        return UInt16ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct UInt16ColumnWriter : ISequentialColumnWriter<ushort, UInt16ColumnWriter>
@@ -1803,33 +1700,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 2;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private UInt16ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static UInt16ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new UInt16ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public UInt16ColumnWriter WriteNext(ushort value)
         {
@@ -1842,11 +1729,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteUInt16LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -1858,42 +1741,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static UInt16ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "UInt16",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new UInt16ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public UInt32ColumnWriter CreateUInt32ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "UInt32");
-        return UInt32ColumnWriter.Create(this, checked((int)_rowsCount));
+        return UInt32ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct UInt32ColumnWriter : ISequentialColumnWriter<uint, UInt32ColumnWriter>
@@ -1901,33 +1777,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 4;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private UInt32ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static UInt32ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new UInt32ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public UInt32ColumnWriter WriteNext(uint value)
         {
@@ -1940,11 +1806,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteUInt32LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -1956,42 +1818,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static UInt32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "UInt32",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new UInt32ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public UInt64ColumnWriter CreateUInt64ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "UInt64");
-        return UInt64ColumnWriter.Create(this, checked((int)_rowsCount));
+        return UInt64ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct UInt64ColumnWriter : ISequentialColumnWriter<ulong, UInt64ColumnWriter>
@@ -1999,33 +1854,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 8;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private UInt64ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static UInt64ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new UInt64ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public UInt64ColumnWriter WriteNext(ulong value)
         {
@@ -2038,11 +1883,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteUInt64LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2054,42 +1895,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static UInt64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "UInt64",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new UInt64ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public UInt128ColumnWriter CreateUInt128ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "UInt128");
-        return UInt128ColumnWriter.Create(this, checked((int)_rowsCount));
+        return UInt128ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct UInt128ColumnWriter : ISequentialColumnWriter<UInt128, UInt128ColumnWriter>
@@ -2097,33 +1931,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 16;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private UInt128ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static UInt128ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new UInt128ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public UInt128ColumnWriter WriteNext(UInt128 value)
         {
@@ -2136,11 +1960,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteUInt128LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2152,42 +1972,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static UInt128ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "UInt128",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new UInt128ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public Int8ColumnWriter CreateInt8ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Int8");
-        return Int8ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Int8ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Int8ColumnWriter : ISequentialColumnWriter<sbyte, Int8ColumnWriter>
@@ -2195,33 +2008,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 1;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Int8ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Int8ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Int8ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Int8ColumnWriter WriteNext(sbyte value)
         {
@@ -2234,11 +2037,7 @@ public partial class NativeFormatBlockWriter
             dest[0] = unchecked((byte)value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2250,42 +2049,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Int8ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Int8",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Int8ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public Int16ColumnWriter CreateInt16ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Int16");
-        return Int16ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Int16ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Int16ColumnWriter : ISequentialColumnWriter<short, Int16ColumnWriter>
@@ -2293,33 +2085,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 2;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Int16ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Int16ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Int16ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Int16ColumnWriter WriteNext(short value)
         {
@@ -2332,11 +2114,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteInt16LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2348,42 +2126,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Int16ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Int16",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Int16ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public Int32ColumnWriter CreateInt32ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Int32");
-        return Int32ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Int32ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Int32ColumnWriter : ISequentialColumnWriter<int, Int32ColumnWriter>
@@ -2391,33 +2162,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 4;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Int32ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Int32ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Int32ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Int32ColumnWriter WriteNext(int value)
         {
@@ -2430,11 +2191,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteInt32LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2446,42 +2203,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Int32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Int32",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Int32ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public Int64ColumnWriter CreateInt64ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Int64");
-        return Int64ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Int64ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Int64ColumnWriter : ISequentialColumnWriter<long, Int64ColumnWriter>
@@ -2489,33 +2239,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 8;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Int64ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Int64ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Int64ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Int64ColumnWriter WriteNext(long value)
         {
@@ -2528,11 +2268,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteInt64LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2544,42 +2280,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Int64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Int64",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Int64ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public Int128ColumnWriter CreateInt128ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Int128");
-        return Int128ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Int128ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Int128ColumnWriter : ISequentialColumnWriter<Int128, Int128ColumnWriter>
@@ -2587,33 +2316,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 16;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Int128ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Int128ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Int128ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Int128ColumnWriter WriteNext(Int128 value)
         {
@@ -2626,11 +2345,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteInt128LittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2642,42 +2357,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Int128ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Int128",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Int128ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public Float32ColumnWriter CreateFloat32ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Float32");
-        return Float32ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Float32ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Float32ColumnWriter : ISequentialColumnWriter<float, Float32ColumnWriter>
@@ -2685,33 +2393,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 4;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Float32ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Float32ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Float32ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Float32ColumnWriter WriteNext(float value)
         {
@@ -2724,11 +2422,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteSingleLittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2740,42 +2434,35 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Float32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Float32",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Float32ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
     public Float64ColumnWriter CreateFloat64ColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "Float64");
-        return Float64ColumnWriter.Create(this, checked((int)_rowsCount));
+        return Float64ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct Float64ColumnWriter : ISequentialColumnWriter<double, Float64ColumnWriter>
@@ -2783,33 +2470,23 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 8;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private Float64ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Float64ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Float64ColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public Float64ColumnWriter WriteNext(double value)
         {
@@ -2822,11 +2499,7 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteDoubleLittleEndian(dest, value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -2838,36 +2511,27 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Float64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "Float64",
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * ValueSize;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Float64ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
     }
 }

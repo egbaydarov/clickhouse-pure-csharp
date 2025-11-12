@@ -159,8 +159,10 @@ public partial class NativeFormatBlockWriter
 {
     public LowCardinalityStringColumnWriter CreateLowCardinalityStringColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "LowCardinality(String)");
-        return LowCardinalityStringColumnWriter.Create(this, checked((int)_rowsCount));
+        return LowCardinalityStringColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct LowCardinalityStringColumnWriter : ISequentialColumnWriter<string, LowCardinalityStringColumnWriter>
@@ -173,14 +175,16 @@ public partial class NativeFormatBlockWriter
         private byte[] _buffer;
         private int _offset;
         private int _index;
+        private readonly ulong _blockIndex;
         private bool _encoded;
-        private bool _segmentAdded;
 
         private LowCardinalityStringColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _lookup = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -190,18 +194,7 @@ public partial class NativeFormatBlockWriter
             _offset = 0;
             _index = 0;
             _encoded = false;
-            _segmentAdded = false;
         }
-
-        internal static LowCardinalityStringColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows)
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(Math.Max(1024, rows * 8));
-            return new LowCardinalityStringColumnWriter(writer, rows, buffer);
-        }
-
-        public int Length => _rows;
 
         public LowCardinalityStringColumnWriter WriteNext(string value)
         {
@@ -219,9 +212,9 @@ public partial class NativeFormatBlockWriter
 
             _keys[_index++] = key;
 
-            if (_index == _rows && !_segmentAdded)
+            if (_index == _rows)
             {
-                EnsureSegmentAdded();
+                EncodeIfNecessary();
             }
 
             return this;
@@ -235,36 +228,26 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows && !_segmentAdded)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static LowCardinalityStringColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var buffer = ArrayPool<byte>.Shared.Rent(Math.Max(1024, rows * 8));
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "LowCardinality(String)",
+                dataLength: 0);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _offset);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            EncodeIfNecessary();
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _offset);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new LowCardinalityStringColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
         }
 
         private void EncodeIfNecessary()
@@ -300,7 +283,10 @@ public partial class NativeFormatBlockWriter
                 _ => throw new InvalidOperationException("Unsupported key width for low cardinality column.")
             };
 
-            EnsureCapacity(_offset + 24);
+            _buffer = _writer.EnsureCapacity(
+                index: _blockIndex,
+                offset: _offset,
+                required: _offset + 24);
             NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), CardinalityKeyVersion);
             _offset += 8;
             NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), CardinalityUpdateAll | keyFlag);
@@ -310,16 +296,25 @@ public partial class NativeFormatBlockWriter
 
             foreach (var entry in _dictionary)
             {
-                EnsureCapacity(_offset + NativeFormatBlockWriter.MaxVarintLen64 + Encoding.UTF8.GetByteCount(entry));
+                _buffer = _writer.EnsureCapacity(
+                    index: _blockIndex,
+                    offset: _offset,
+                    required: _offset + NativeFormatBlockWriter.MaxVarintLen64 + Encoding.UTF8.GetByteCount(entry));
                 _offset += NativeFormatBlockWriter.WriteUtf8StringValue(_buffer.AsSpan(_offset), entry);
             }
 
-            EnsureCapacity(_offset + 8);
+            _buffer = _writer.EnsureCapacity(
+                index: _blockIndex,
+                offset: _offset,
+                required: _offset + 8);
             NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), _rows);
             _offset += 8;
 
             var keyBytes = _rows * keyWidth;
-            EnsureCapacity(_offset + keyBytes);
+            _buffer = _writer.EnsureCapacity(
+                index: _blockIndex,
+                offset: _offset,
+                required: _offset + keyBytes);
             var keysSpan = _buffer.AsSpan(_offset, keyBytes);
 
             switch (keyWidth)
@@ -362,20 +357,7 @@ public partial class NativeFormatBlockWriter
 
             _offset += keyBytes;
             _encoded = true;
-        }
-
-        private void EnsureCapacity(int required)
-        {
-            if (required <= _buffer.Length)
-            {
-                return;
-            }
-
-            var newSize = Math.Max(_buffer.Length * 2, required);
-            var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
-            _buffer.AsSpan(0, _offset).CopyTo(newBuffer);
-            ArrayPool<byte>.Shared.Return(_buffer);
-            _buffer = newBuffer;
+            _writer.SetDataLength(_blockIndex, _offset);
         }
     }
 }

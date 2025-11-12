@@ -401,8 +401,13 @@ public partial class NativeFormatBlockWriter
         var typeName = precision is null
             ? $"Decimal32({scale})"
             : $"Decimal({actualPrecision}, {scale})";
-        WriteColumnHeader(columnName, typeName);
-        return Decimal32ColumnWriter.Create(this, checked((int)_rowsCount), scale, actualPrecision);
+        return Decimal32ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            scale: scale,
+            precision: actualPrecision);
 
     }
 
@@ -411,41 +416,29 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 4;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private readonly int _scale;
         private readonly int _precision;
         private int _index;
-        private bool _segmentAdded;
 
         private Decimal32ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer,
             int scale,
             int precision)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _scale = scale;
             _precision = precision;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Decimal32ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows,
-            int scale,
-            int precision)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Decimal32ColumnWriter(writer, rows, buffer, scale, precision);
-        }
-
-        public int Length => _rows;
 
         public int Scale => _scale;
 
@@ -467,11 +460,7 @@ public partial class NativeFormatBlockWriter
 
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -483,35 +472,32 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Decimal32ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            string typeName,
+            int rows,
+            int scale,
+            int precision)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: typeName,
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Decimal32ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer,
+                scale: scale,
+                precision: precision);
         }
     }
     public Decimal64ColumnWriter CreateDecimal64ColumnWriter(
@@ -525,8 +511,13 @@ public partial class NativeFormatBlockWriter
         var typeName = precision is null
             ? $"Decimal64({scale})"
             : $"Decimal({actualPrecision}, {scale})";
-        WriteColumnHeader(columnName, typeName);
-        return Decimal64ColumnWriter.Create(this, checked((int)_rowsCount), scale, actualPrecision);
+        return Decimal64ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            scale: scale,
+            precision: actualPrecision);
 
     }
 
@@ -535,41 +526,29 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 8;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private readonly int _scale;
         private readonly int _precision;
         private int _index;
-        private bool _segmentAdded;
 
         private Decimal64ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer,
             int scale,
             int precision)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _scale = scale;
             _precision = precision;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Decimal64ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows,
-            int scale,
-            int precision)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Decimal64ColumnWriter(writer, rows, buffer, scale, precision);
-        }
-
-        public int Length => _rows;
 
         public int Scale => _scale;
 
@@ -591,11 +570,7 @@ public partial class NativeFormatBlockWriter
 
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -607,35 +582,32 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Decimal64ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            string typeName,
+            int rows,
+            int scale,
+            int precision)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: typeName,
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Decimal64ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer,
+                scale: scale,
+                precision: precision);
         }
     }
     public Decimal128ColumnWriter CreateDecimal128ColumnWriter(
@@ -649,8 +621,13 @@ public partial class NativeFormatBlockWriter
         var typeName = precision is null
             ? $"Decimal128({scale})"
             : $"Decimal({actualPrecision}, {scale})";
-        WriteColumnHeader(columnName, typeName);
-        return Decimal128ColumnWriter.Create(this, checked((int)_rowsCount), scale, actualPrecision);
+        return Decimal128ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            scale: scale,
+            precision: actualPrecision);
 
     }
 
@@ -659,41 +636,29 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 16;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private readonly int _scale;
         private readonly int _precision;
         private int _index;
-        private bool _segmentAdded;
 
         private Decimal128ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer,
             int scale,
             int precision)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _scale = scale;
             _precision = precision;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Decimal128ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows,
-            int scale,
-            int precision)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Decimal128ColumnWriter(writer, rows, buffer, scale, precision);
-        }
-
-        public int Length => _rows;
 
         public int Scale => _scale;
 
@@ -714,11 +679,7 @@ public partial class NativeFormatBlockWriter
 
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -730,35 +691,32 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Decimal128ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            string typeName,
+            int rows,
+            int scale,
+            int precision)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: typeName,
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Decimal128ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer,
+                scale: scale,
+                precision: precision);
         }
     }
     public Decimal256ColumnWriter CreateDecimal256ColumnWriter(
@@ -772,8 +730,13 @@ public partial class NativeFormatBlockWriter
         var typeName = precision is null
             ? $"Decimal256({scale})"
             : $"Decimal({actualPrecision}, {scale})";
-        WriteColumnHeader(columnName, typeName);
-        return Decimal256ColumnWriter.Create(this, checked((int)_rowsCount), scale, actualPrecision);
+        return Decimal256ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            scale: scale,
+            precision: actualPrecision);
 
     }
 
@@ -782,41 +745,29 @@ public partial class NativeFormatBlockWriter
         private const int ValueSize = 32;
 
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly byte[] _buffer;
         private readonly int _scale;
         private readonly int _precision;
         private int _index;
-        private bool _segmentAdded;
 
         private Decimal256ColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             byte[] buffer,
             int scale,
             int precision)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _scale = scale;
             _precision = precision;
             _index = 0;
-            _segmentAdded = false;
         }
-
-        internal static Decimal256ColumnWriter Create(
-            NativeFormatBlockWriter writer,
-            int rows,
-            int scale,
-            int precision)
-        {
-            var totalSize = rows * ValueSize;
-            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new Decimal256ColumnWriter(writer, rows, buffer, scale, precision);
-        }
-
-        public int Length => _rows;
 
         public int Scale => _scale;
 
@@ -837,11 +788,7 @@ public partial class NativeFormatBlockWriter
 
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * ValueSize));
             return this;
         }
 
@@ -853,35 +800,32 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
         }
 
-        public ReadOnlyMemory<byte> GetColumnData()
+        internal static Decimal256ColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            string typeName,
+            int rows,
+            int scale,
+            int precision)
         {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
+            var totalSize = rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: typeName,
+                dataLength: totalSize);
 
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
+            return new Decimal256ColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer,
+                scale: scale,
+                precision: precision);
         }
     }
 

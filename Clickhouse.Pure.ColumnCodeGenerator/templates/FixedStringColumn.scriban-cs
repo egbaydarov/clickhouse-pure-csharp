@@ -109,44 +109,54 @@ public partial class NativeFormatBlockWriter
         }
 
         var typeName = $"FixedString({size})";
-        WriteColumnHeader(columnName, typeName);
-        return FixedStringColumnWriter.Create(this, checked((int)_rowsCount), size);
+        return FixedStringColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            size: size);
     }
 
     public ref struct FixedStringColumnWriter : ISequentialColumnWriter<string, FixedStringColumnWriter>
     {
         private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
         private readonly int _rows;
         private readonly int _size;
         private readonly byte[] _buffer;
         private int _index;
-        private bool _segmentAdded;
 
         private FixedStringColumnWriter(
+            ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
             int size,
             byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _size = size;
             _buffer = buffer;
             _index = 0;
-            _segmentAdded = false;
         }
 
         internal static FixedStringColumnWriter Create(
             NativeFormatBlockWriter writer,
+            string columnName,
+            string typeName,
             int rows,
             int size)
         {
             var totalSize = rows * size;
             var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
-            return new FixedStringColumnWriter(writer, rows, size, buffer);
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: typeName,
+                dataLength: totalSize);
+            return new FixedStringColumnWriter(blockIndex, writer, rows, size, buffer);
         }
-
-        public int Length => _rows;
 
         public FixedStringColumnWriter WriteNext(string value)
         {
@@ -170,11 +180,7 @@ public partial class NativeFormatBlockWriter
 
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
+            _writer.SetDataLength(_blockIndex, checked(_index * _size));
             return this;
         }
 
@@ -186,36 +192,7 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
-        }
-
-        public ReadOnlyMemory<byte> GetColumnData()
-        {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
-
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * _size);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var length = _rows * _size;
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, length);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
         }
     }
     {{~ end ~}}

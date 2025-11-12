@@ -392,7 +392,6 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
         {
             col.WriteNext(value);
         }
-        col.GetColumnData();
 
         await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
 
@@ -422,7 +421,6 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
         {
             col.WriteNext(value);
         }
-        col.GetColumnData();
 
         await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
 

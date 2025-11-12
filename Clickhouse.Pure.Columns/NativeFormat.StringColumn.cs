@@ -74,39 +74,57 @@ public partial class NativeFormatBlockWriter
 {
     public StringColumnWriter CreateStringColumnWriter(string columnName)
     {
-        WriteColumnHeader(columnName, "String");
-        return StringColumnWriter.Create(this, checked((int)_rowsCount));
+        return StringColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
     }
 
     public ref struct StringColumnWriter : ISequentialColumnWriter<string, StringColumnWriter>
     {
         private const int InitialCapacity = 1024;
 
+        private readonly ulong _blockIndex;
         private NativeFormatBlockWriter _writer;
         private readonly int _rows;
         private byte[] _buffer;
         private int _offset;
         private int _index;
-        private bool _segmentAdded;
 
-        private StringColumnWriter(NativeFormatBlockWriter writer, int rows, byte[] buffer)
+        private StringColumnWriter(
+            ulong blockIndex,
+            NativeFormatBlockWriter writer,
+            int rows,
+            byte[] buffer)
         {
+            _blockIndex = blockIndex;
             _writer = writer;
             _rows = rows;
             _buffer = buffer;
             _offset = 0;
             _index = 0;
-            _segmentAdded = false;
         }
 
-        internal static StringColumnWriter Create(NativeFormatBlockWriter writer, int rows)
+        internal static StringColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
         {
             var initial = Math.Max(InitialCapacity, rows * 4);
             var buffer = ArrayPool<byte>.Shared.Rent(initial);
-            return new StringColumnWriter(writer, rows, buffer);
-        }
 
-        public int Length => _rows;
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "String",
+                dataLength: 0);
+
+            return new StringColumnWriter(
+                blockIndex,
+                writer,
+                rows,
+                buffer);
+        }
 
         public StringColumnWriter WriteNext(string value)
         {
@@ -116,15 +134,15 @@ public partial class NativeFormatBlockWriter
             }
 
             var byteCount = Encoding.UTF8.GetByteCount(value);
-            EnsureCapacity(_offset + NativeFormatBlockWriter.MaxVarintLen64 + byteCount);
+            _buffer = _writer.EnsureCapacity(
+                index: _blockIndex,
+                offset: _offset,
+                required: _offset + MaxVarintLen64 + byteCount);
 
-            _offset += NativeFormatBlockWriter.WriteUtf8StringValue(_buffer.AsSpan(_offset), value);
+            _offset += WriteUtf8StringValue(_buffer.AsSpan(_offset), value);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
+            _writer.SetDataLength(_blockIndex, _offset);
 
             return this;
         }
@@ -137,49 +155,7 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
-        }
-
-        public ReadOnlyMemory<byte> GetColumnData()
-        {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
-
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _offset);
-        }
-
-        private void EnsureCapacity(int required)
-        {
-            if (required <= _buffer.Length)
-            {
-                return;
-            }
-
-            var newSize = Math.Max(_buffer.Length * 2, required);
-            var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
-            _buffer.AsSpan(0, _offset).CopyTo(newBuffer);
-            ArrayPool<byte>.Shared.Return(_buffer);
-            _buffer = newBuffer;
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _offset);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
         }
     }
 }

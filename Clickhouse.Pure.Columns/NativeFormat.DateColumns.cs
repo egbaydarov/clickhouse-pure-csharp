@@ -109,9 +109,13 @@ public partial class NativeFormatBlockWriter
         var typeName = string.IsNullOrEmpty(timeZone)
             ? $"DateTime64({scale})"
             : $"DateTime64({scale}, '{timeZone}')";
-        WriteColumnHeader(columnName, typeName);
 
-        return DateTime64ColumnWriter.Create(this, checked((int)_rowsCount), scale);
+        return DateTime64ColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            typeName: typeName,
+            rows: checked((int)_rowsCount),
+            scale: scale);
     }
 
     public ref struct DateTime64ColumnWriter : ISequentialColumnWriter<DateTimeOffset, DateTime64ColumnWriter>
@@ -123,7 +127,6 @@ public partial class NativeFormatBlockWriter
         private readonly byte[] _buffer;
         private readonly long _pow;
         private int _index;
-        private bool _segmentAdded;
 
         private DateTime64ColumnWriter(
             NativeFormatBlockWriter writer,
@@ -136,20 +139,21 @@ public partial class NativeFormatBlockWriter
             _buffer = buffer;
             _pow = Pow10[scale];
             _index = 0;
-            _segmentAdded = false;
         }
 
         internal static DateTime64ColumnWriter Create(
             NativeFormatBlockWriter writer,
+            string columnName,
+            string typeName,
             int rows,
             int scale)
         {
             var totalSize = rows * ValueSize;
             var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            writer.WriteColumnHeader(buffer, columnName, typeName, totalSize);
+
             return new DateTime64ColumnWriter(writer, rows, buffer, scale);
         }
-
-        public int Length => _rows;
 
         public DateTime64ColumnWriter WriteNext(DateTimeOffset value)
         {
@@ -175,11 +179,6 @@ public partial class NativeFormatBlockWriter
             BinaryPrimitives.WriteInt64LittleEndian(dest, raw);
             _index++;
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return this;
         }
 
@@ -191,35 +190,7 @@ public partial class NativeFormatBlockWriter
                 WriteNext(value);
             }
 
-            if (_index == _rows)
-            {
-                EnsureSegmentAdded();
-            }
-
             return _writer;
-        }
-
-        public ReadOnlyMemory<byte> GetColumnData()
-        {
-            if (_index != _rows)
-            {
-                throw new InvalidOperationException("Attempted to get column data before all rows were written.");
-            }
-
-            EnsureSegmentAdded();
-            return new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-        }
-
-        private void EnsureSegmentAdded()
-        {
-            if (_segmentAdded)
-            {
-                return;
-            }
-
-            var segment = new ReadOnlyMemory<byte>(_buffer, 0, _rows * ValueSize);
-            _writer.AddSegment(segment, _buffer);
-            _segmentAdded = true;
         }
     }
 }

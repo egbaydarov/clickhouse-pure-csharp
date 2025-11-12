@@ -3,11 +3,13 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Net;
+using System.Runtime.InteropServices.ComTypes;
 
 namespace Clickhouse.Pure.Columns;
 
@@ -20,10 +22,8 @@ public interface ISequentialColumnReader<out T>
 
 public interface ISequentialColumnWriter<in T, out TWriter> where TWriter : allows ref struct
 {
-    int Length { get; }
     TWriter WriteNext(T value);
     NativeFormatBlockWriter WriteAll(IEnumerable<T> values);
-    ReadOnlyMemory<byte> GetColumnData();
 }
 
 /// <summary>
@@ -196,9 +196,16 @@ public partial class NativeFormatBlockWriter : IDisposable
 
     private readonly ulong _columnsCount;
     private readonly ulong _rowsCount;
-    private ulong _columnsWritten;
-    private readonly List<ReadOnlyMemory<byte>> _segments = new();
-    private readonly List<byte[]> _pooledSegments = new();
+    
+    private readonly byte[] _blockHeader;
+    private readonly int _blockHeaderLength;
+
+    private ulong _columnsHeadersWritten;
+    private readonly byte[][] _headers;
+    private readonly int[] _headersLength;
+
+    private readonly byte[][] _data;
+    private readonly int[] _dataLength;
 
     public NativeFormatBlockWriter(
         int columnsCount,
@@ -211,11 +218,23 @@ public partial class NativeFormatBlockWriter : IDisposable
 
         _columnsCount = (ulong)columnsCount;
         _rowsCount = (ulong)rowsCount;
-        _columnsWritten = 0;
+        _columnsHeadersWritten = 0;
 
-        WriteBlockHeader(
-            columnsCount: (ulong)columnsCount,
-            rowsCount: (ulong)rowsCount);
+        _headers = new byte[_columnsCount][];
+        _headersLength = new int[_columnsCount];
+        _data = new byte[_columnsCount][];
+        _dataLength = new int[_columnsCount];
+        
+        _blockHeader = new byte[MaxVarintLen64 * 2];
+
+        var buffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2);
+        var offset = 0;
+        
+        offset += WriteUVarInt(buffer.AsSpan(offset), _columnsCount);
+        offset += WriteUVarInt(buffer.AsSpan(offset), _rowsCount);
+
+        _blockHeaderLength = offset;
+        _blockHeader = buffer;
     }
 
     public void Dispose()
@@ -227,30 +246,6 @@ public partial class NativeFormatBlockWriter : IDisposable
     ~NativeFormatBlockWriter()
     {
         ReturnPooledSegments();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void AddSegment(ReadOnlyMemory<byte> segment, byte[]? rentedBuffer = null)
-    {
-        _segments.Add(segment);
-        if (rentedBuffer is not null)
-        {
-            _pooledSegments.Add(rentedBuffer);
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteBlockHeader(
-        ulong columnsCount,
-        ulong rowsCount)
-    {
-        var buffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2);
-        var offset = 0;
-        
-        offset += WriteUVarInt(buffer.AsSpan(offset), columnsCount);
-        offset += WriteUVarInt(buffer.AsSpan(offset), rowsCount);
-        
-        AddSegment(buffer.AsMemory(0, offset), buffer);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -282,61 +277,89 @@ public partial class NativeFormatBlockWriter : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteColumnHeader(
+    private ulong WriteColumnHeader(
+        byte[] buffer,
         string columnName,
-        string typeName)
+        string typeName,
+        int dataLength)
     {
-        if (_columnsWritten >= _columnsCount)
+        if (_columnsHeadersWritten >= _columnsCount)
         {
             throw new InvalidOperationException("All declared columns have already been written.");
         }
 
         var nameByteCount = Encoding.UTF8.GetByteCount(columnName);
         var typeByteCount = Encoding.UTF8.GetByteCount(typeName);
-        var buffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2 + nameByteCount + typeByteCount);
+        var headerBuffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2 + nameByteCount + typeByteCount);
         
         var offset = 0;
-        offset += WriteHeaderString(buffer.AsSpan(offset), columnName);
-        offset += WriteHeaderString(buffer.AsSpan(offset), typeName);
-        
-        AddSegment(buffer.AsMemory(0, offset), buffer);
-        _columnsWritten++;
+        offset += WriteHeaderString(headerBuffer.AsSpan(offset), columnName);
+        offset += WriteHeaderString(headerBuffer.AsSpan(offset), typeName);
+
+        var columnIndex = _columnsHeadersWritten++;
+        _headers[columnIndex] = headerBuffer;
+        _headersLength[columnIndex] = offset;
+        _data[columnIndex] = buffer;
+        _dataLength[columnIndex] = dataLength;
+
+        return columnIndex;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SetDataLength(
+        ulong index,
+        int length)
+    {
+        _dataLength[index] = length;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private byte[] EnsureCapacity(
+        ulong index,
+        int offset,
+        int required)
+    {
+        var buffer = _data[index];
+        if (required <= buffer.Length)
+        {
+            return _data[index];
+        }
+
+        var newSize = Math.Max(buffer.Length * 2, required);
+        var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
+        buffer.AsSpan(0, offset).CopyTo(newBuffer);
+        ArrayPool<byte>.Shared.Return(buffer);
+        _data[index] = newBuffer;
+
+        return newBuffer;
     }
 
     public ReadOnlyMemory<byte> GetWrittenBuffer()
     {
-        if (_segments.Count == 0)
+        if (_columnsHeadersWritten == 0)
         {
             return ReadOnlyMemory<byte>.Empty;
         }
-        
-        if (_segments.Count == 1)
-        {
-            return _segments[0];
-        }
-        
+
         // Merge all segments into a single buffer
-        var totalSize = _segments.Sum(s => s.Length);
-        var merged = new byte[totalSize];
-        var offset = 0;
-        
-        foreach (var segment in _segments)
+        var totalSizeHeaders = _headersLength.Sum(s => s);
+        var totalSizeData = _dataLength.Sum(s => s);
+
+        var merged = new byte[_blockHeaderLength + totalSizeHeaders + totalSizeData];
+
+        _blockHeader[.._blockHeaderLength].CopyTo(merged.AsSpan(0));
+        var offset = _blockHeaderLength;
+        for (ulong i = 0; i < _columnsHeadersWritten; i++)
         {
-            segment.Span.CopyTo(merged.AsSpan(offset));
-            offset += segment.Length;
+            _headers[i][.._headersLength[i]].CopyTo(merged.AsSpan(offset));
+            offset += _headersLength[i];
+            _data[i][.._dataLength[i]].CopyTo(merged.AsSpan(offset));
+            offset += _dataLength[i];
         }
 
-        ReturnPooledSegments();
-        _segments.Clear();
-        var mergedMemory = merged.AsMemory();
-        _segments.Add(mergedMemory);
-        
-        return mergedMemory;
-    }
+        Debug.Assert(merged.Length == offset);
 
-    public IEnumerable<ReadOnlyMemory<byte>> GetBlockData()
-    {
-        return _segments;
+        return merged;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -355,17 +378,13 @@ public partial class NativeFormatBlockWriter : IDisposable
 
     private void ReturnPooledSegments()
     {
-        if (_pooledSegments.Count == 0)
-        {
-            return;
-        }
+        ArrayPool<byte>.Shared.Return(_blockHeader);
 
-        foreach (var buffer in _pooledSegments)
+        for (ulong i = 0; i < _columnsHeadersWritten; i++)
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            ArrayPool<byte>.Shared.Return(_data[i]);
+            ArrayPool<byte>.Shared.Return(_headers[i]);
         }
-
-        _pooledSegments.Clear();
     }
 }
 
