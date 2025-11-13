@@ -17,34 +17,34 @@ public class Sut
         string tableName,
         IEnumerable<string> rows)
     {
-        if (string.IsNullOrWhiteSpace(tableName))
+        if (string.IsNullOrWhiteSpace(value: tableName))
         {
-            throw new ArgumentException("Table name must be provided", nameof(tableName));
+            throw new ArgumentException(message: "Table name must be provided", paramName: nameof(tableName));
         }
 
-        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(argument: rows);
         var rowList = rows as IList<string> ?? rows.ToList();
 
         if (rowList.Count == 0)
         {
-            throw new ArgumentException("At least one row must be provided.", nameof(rows));
+            throw new ArgumentException(message: "At least one row must be provided.", paramName: nameof(rows));
         }
 
         var bulkWriter = await _handler.InputBulk(
-            $"INSERT INTO {tableName} FORMAT CSV",
-            "\n");
+            initialQuery: $"INSERT INTO {tableName} FORMAT CSV",
+            inputDataDelimiter: "\n");
 
         try
         {
             for (var i = 0; i < rowList.Count; i++)
             {
-                var payload = Encoding.UTF8.GetBytes(rowList[i]);
+                var payload = Encoding.UTF8.GetBytes(s: rowList[index: i]);
                 var hasMore = i < rowList.Count - 1;
 
-                var wrote = await bulkWriter.WriteRowsBulkAsync(payload, hasMore);
+                var wrote = await bulkWriter.WriteRowsBulkAsync(inputData: payload, hasMoreData: hasMore);
                 if (!wrote)
                 {
-                    throw new InvalidOperationException("Failed to write CSV payload.");
+                    throw new InvalidOperationException(message: "Failed to write CSV payload.");
                 }
             }
 
@@ -117,7 +117,9 @@ public class Sut
         }
 
         var bulkWriter = await _handler.InputBulk(
-            $"INSERT INTO {tableName} FORMAT CSV", "\n");
+            initialQuery: $"INSERT INTO {tableName} FORMAT CSV",
+            database: "default",
+            inputDataDelimiter: "\n");
 
         try
         {

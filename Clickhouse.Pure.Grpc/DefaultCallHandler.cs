@@ -30,7 +30,7 @@ public sealed class DefaultCallHandler : IDisposable
             UserName = username,
             Password = password,
             TransportCompressionLevel = compressionLevel,
-            TransportCompressionType = compression
+            TransportCompressionType = compression,
         };
         _router = router;
         
@@ -44,9 +44,20 @@ public sealed class DefaultCallHandler : IDisposable
         _queryTimeout = queryTimeout;
     }
 
+    /// <summary>
+    /// Initiate session (error details will be wrapped by writer)
+    /// </summary>
+    /// <param name="initialQuery">Use constant for efficiency and avoiding injections</param>
+    /// <param name="database">Default in query contains only table name</param>
+    /// <param name="inputDataDelimiter">
+    /// Use that param for formats like CSV,
+    /// TabSeparated, TSKV, JSONEachRow, Template, CustomSeparated and Protobuf</param>
+    /// <param name="settings">arbitrary settings supported by clickhouse server (merged with default provided in constructor)</param>
+    /// <returns></returns>
     public async Task<BulkWriter> InputBulk(
         string initialQuery,
-        string delimiter = "",
+        string? database = null,
+        string inputDataDelimiter = "",
         Dictionary<string,string>? settings = null)
     {
         var call = _router.Call<AsyncClientStreamingCall<QueryInfo, Result>>(
@@ -74,9 +85,11 @@ public sealed class DefaultCallHandler : IDisposable
                         Query = initialQuery,
                         Settings = { querySettings },
                         NextQueryInfo = true,
+                        Database = database ?? _baseQueryInfo.Database,
                         SessionId = Guid.NewGuid().ToString(),
                         InputDataDelimiter = UnsafeByteOperations.UnsafeWrap(
-                            bytes: Encoding.UTF8.GetBytes(s: delimiter).AsMemory()),
+                            bytes: Encoding.UTF8.GetBytes(s: inputDataDelimiter)
+                                .AsMemory()),
                     }, cancellationToken: ct);
                 
                 return result;
@@ -102,6 +115,7 @@ public sealed class DefaultCallHandler : IDisposable
 
     public async Task<(string?, RpcException?)> QueryRawString(
         string query,
+        string? database = null,
         Dictionary<string,string>? settings = null)
     {
         var call = _router.Call<Result>(
@@ -119,6 +133,7 @@ public sealed class DefaultCallHandler : IDisposable
                     TransportCompressionLevel = _baseQueryInfo.TransportCompressionLevel,
                     TransportCompressionType = _baseQueryInfo.TransportCompressionType,
                     Query = query,
+                    Database = database ?? _baseQueryInfo.Database,
                     Settings = { querySettings }
                 };
 
@@ -161,6 +176,7 @@ public sealed class DefaultCallHandler : IDisposable
 
     public async Task<(Result?, RpcException?)> QueryRawResult(
         string query,
+        string? database = null,
         Dictionary<string,string>? settings = null)
     {
         var call = _router.Call<Result>(
@@ -179,7 +195,8 @@ public sealed class DefaultCallHandler : IDisposable
                     TransportCompressionLevel = _baseQueryInfo.TransportCompressionLevel,
                     TransportCompressionType = _baseQueryInfo.TransportCompressionType,
                     Query = query,
-                    Settings = { querySettings }
+                    Settings = { querySettings },
+                    Database = database ?? _baseQueryInfo.Database,
                 };
 
                 var result = client
@@ -209,6 +226,7 @@ public sealed class DefaultCallHandler : IDisposable
 
     public async Task<NativeBulkReader> QueryNativeBulk(
         string query,
+        string? database = null,
         Dictionary<string,string>? settings = null)
     {
         var call = _router.Call<AsyncServerStreamingCall<Result>>(
@@ -229,6 +247,7 @@ public sealed class DefaultCallHandler : IDisposable
                     OutputFormat = "Native",
                     Settings = { querySettings },
                     Query = query,
+                    Database = database ?? _baseQueryInfo.Database,
                 };
 
                 var result = client
