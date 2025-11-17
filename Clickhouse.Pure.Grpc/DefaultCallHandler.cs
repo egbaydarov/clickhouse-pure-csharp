@@ -15,7 +15,7 @@ public sealed class DefaultCallHandler : IDisposable
 
     private readonly TimeSpan? _queryTimeout;
     private readonly MapField<string, string> _defaultSettings;
-    
+
     public DefaultCallHandler(
         ClickHouseGrpcRouter router,
         string password,
