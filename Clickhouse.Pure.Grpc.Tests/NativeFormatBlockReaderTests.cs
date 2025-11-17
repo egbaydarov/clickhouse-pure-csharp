@@ -214,177 +214,160 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
         var actualLowCard = new List<string>();
         var actualFixedString = new List<string>();
 
-        while (true)
+        while (await reader.Read() is { } block)
         {
-            var response = await reader.ReadNext();
-
-            if (response.IsFailed())
-            {
-                throw response.Exception!;
-            }
-
-            if (response.Completed)
-            {
-                break;
-            }
-
-            if (!response.IsBlock())
-            {
-                continue;
-            }
-
-            var blockReader = response.BlockReader;
-
-            var uint8Column = blockReader.ReadUInt8Column();
+            var uint8Column = block.ReadUInt8Column();
             while (uint8Column.HasMoreRows())
             {
                 actualUInt8.Add(uint8Column.ReadNext());
             }
 
-            var uint16Column = blockReader.ReadUInt16Column();
+            var uint16Column = block.ReadUInt16Column();
             while (uint16Column.HasMoreRows())
             {
                 actualUInt16.Add(uint16Column.ReadNext());
             }
 
-            var uint32Column = blockReader.ReadUInt32Column();
+            var uint32Column = block.ReadUInt32Column();
             while (uint32Column.HasMoreRows())
             {
                 actualUInt32.Add(uint32Column.ReadNext());
             }
 
-            var uint64Column = blockReader.ReadUInt64Column();
+            var uint64Column = block.ReadUInt64Column();
             while (uint64Column.HasMoreRows())
             {
                 actualUInt64.Add(uint64Column.ReadNext());
             }
 
-            var uint128Column = blockReader.ReadUInt128Column();
+            var uint128Column = block.ReadUInt128Column();
             while (uint128Column.HasMoreRows())
             {
                 actualUInt128.Add(uint128Column.ReadNext());
             }
 
-            var int8Column = blockReader.ReadInt8Column();
+            var int8Column = block.ReadInt8Column();
             while (int8Column.HasMoreRows())
             {
                 actualInt8.Add(int8Column.ReadNext());
             }
 
-            var int16Column = blockReader.ReadInt16Column();
+            var int16Column = block.ReadInt16Column();
             while (int16Column.HasMoreRows())
             {
                 actualInt16.Add(int16Column.ReadNext());
             }
 
-            var int32Column = blockReader.ReadInt32Column();
+            var int32Column = block.ReadInt32Column();
             while (int32Column.HasMoreRows())
             {
                 actualInt32.Add(int32Column.ReadNext());
             }
 
-            var int64Column = blockReader.ReadInt64Column();
+            var int64Column = block.ReadInt64Column();
             while (int64Column.HasMoreRows())
             {
                 actualInt64.Add(int64Column.ReadNext());
             }
 
-            var int128Column = blockReader.ReadInt128Column();
+            var int128Column = block.ReadInt128Column();
             while (int128Column.HasMoreRows())
             {
                 actualInt128.Add(int128Column.ReadNext());
             }
 
-            var decimal32Column = blockReader.ReadDecimal32Column();
+            var decimal32Column = block.ReadDecimal32Column();
             while (decimal32Column.HasMoreRows())
             {
                 actualDecimal32.Add(decimal32Column.ReadNext());
             }
 
-            var decimal64Column = blockReader.ReadDecimal64Column();
+            var decimal64Column = block.ReadDecimal64Column();
             while (decimal64Column.HasMoreRows())
             {
                 actualDecimal64.Add(decimal64Column.ReadNext());
             }
 
-            var decimal128Column = blockReader.ReadDecimal128Column();
+            var decimal128Column = block.ReadDecimal128Column();
             while (decimal128Column.HasMoreRows())
             {
                 actualDecimal128.Add(decimal128Column.ReadNext());
             }
 
-            var decimal256Column = blockReader.ReadDecimal256Column();
+            var decimal256Column = block.ReadDecimal256Column();
             while (decimal256Column.HasMoreRows())
             {
                 actualDecimal256.Add(decimal256Column.ReadNext());
             }
 
-            var float32Column = blockReader.ReadFloat32Column();
+            var float32Column = block.ReadFloat32Column();
             while (float32Column.HasMoreRows())
             {
                 actualFloat32.Add(float32Column.ReadNext());
             }
 
-            var float64Column = blockReader.ReadFloat64Column();
+            var float64Column = block.ReadFloat64Column();
             while (float64Column.HasMoreRows())
             {
                 actualFloat64.Add(float64Column.ReadNext());
             }
 
-            var boolColumn = blockReader.ReadBoolColumn();
+            var boolColumn = block.ReadBoolColumn();
             while (boolColumn.HasMoreRows())
             {
                 actualBool.Add(boolColumn.ReadNext());
             }
 
-            var dateColumn = blockReader.ReadDateColumn();
+            var dateColumn = block.ReadDateColumn();
             while (dateColumn.HasMoreRows())
             {
                 actualDate.Add(dateColumn.ReadNext());
             }
 
-            var date32Column = blockReader.ReadDate32Column();
+            var date32Column = block.ReadDate32Column();
             while (date32Column.HasMoreRows())
             {
                 actualDate32.Add(date32Column.ReadNext());
             }
 
-            var dateTime64Column = blockReader.ReadDateTime64Column(6, string.Empty);
+            var dateTime64Column = block.ReadDateTime64Column(6, string.Empty);
             while (dateTime64Column.HasMoreRows())
             {
                 actualDateTime64.Add(dateTime64Column.ReadNext());
             }
 
-            var ipv4Column = blockReader.ReadIPv4Column();
+            var ipv4Column = block.ReadIPv4Column();
             while (ipv4Column.HasMoreRows())
             {
                 actualIpv4.Add(ipv4Column.ReadNext());
             }
 
-            var stringColumn = blockReader.ReadStringColumn();
+            var stringColumn = block.ReadStringColumn();
             while (stringColumn.HasMoreRows())
             {
                 actualString.Add(stringColumn.ReadNext());
             }
 
-            var nullableStringColumn = blockReader.ReadNullableStringColumn();
+            var nullableStringColumn = block.ReadNullableStringColumn();
             while (nullableStringColumn.HasMoreRows())
             {
                 actualNullableString.Add(nullableStringColumn.ReadNext());
             }
 
-            var lowCardColumn = blockReader.ReadLowCardinalityStringColumn();
+            var lowCardColumn = block.ReadLowCardinalityStringColumn();
             while (lowCardColumn.HasMoreRows())
             {
                 actualLowCard.Add(lowCardColumn.ReadNext());
             }
 
-            var fixedStringColumn = blockReader.ReadFixedStringColumn();
+            var fixedStringColumn = block.ReadFixedStringColumn();
             while (fixedStringColumn.HasMoreRows())
             {
                 actualFixedString.Add(fixedStringColumn.ReadNext());
             }
         }
+
+        reader.GetState();
 
         actualUInt8.Should().Equal(uint8Values);
         actualUInt16.Should().Equal(uint16Values);
@@ -784,6 +767,43 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task StringColumn_ReadsLargeNativeBlock()
+    {
+        _tableName = $"default.native_read_string_{Guid.NewGuid():N}";
+
+        var random = new Random();
+        string RandomString(int length)
+        {
+            const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            return new string(Enumerable.Range(0, length)
+                .Select(_ => chars[random.Next(chars.Length)]).ToArray());
+        }
+
+        var values = Enumerable.Range(0, 10_000)
+            .Select(_ => RandomString(random.Next(5, 25))) // random length between 5–25 chars
+            .ToArray();
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "String");
+        await _sut.InsertCsvAsync(_tableName, values.Select(FormatCsvString));
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadStringColumn();
+            var result = new List<string>(column.Length);
+            while (column.HasMoreRows())
+            {
+                result.Add(column.ReadNext());
+            }
+
+            return result;
+        });
+
+        actual
+            .Should()
+            .Equal(values);
+    }
+
+    [Fact]
     public async Task StringColumn_ReadsNativeBlock()
     {
         _tableName = $"default.native_read_string_{Guid.NewGuid():N}";
@@ -1164,27 +1184,17 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
         using var reader = await _sut.QueryNativeBulkAsync(query);
         var values = new List<T>();
 
-        while (true)
+        while (await reader.Read() is { } block)
         {
-            var response = await reader.ReadNext();
-
-            if (response.IsFailed())
-            {
-                throw response.Exception!;
-            }
-
-            if (response.Completed)
-            {
-                break;
-            }
-
-            if (!response.IsBlock())
-            {
-                continue;
-            }
-
-            var blockValues = readBlock(response.BlockReader);
+            var blockValues = readBlock(block);
             values.AddRange(blockValues);
+        }
+
+        var result = reader.GetState();
+
+        if (result.Error != null)
+        {
+            throw new System.Exception(result.Error.Message);
         }
 
         return values;

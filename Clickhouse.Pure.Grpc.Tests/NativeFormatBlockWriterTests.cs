@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Net;
+using System.Text;
 using AwesomeAssertions;
 using Clickhouse.Pure.Columns;
 using Xunit;
@@ -11,6 +12,52 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
 {
     private readonly Sut _sut = SutFactory.Create();
     private string? _tableName;
+
+    [Fact]
+    public async Task UInt32Column_RoundTripsNativeBlockParallel()
+    {
+        var tableName1 = $"default.native_uint32_{Guid.NewGuid():N}";
+        var tableName2 = $"default.native_uint32_{Guid.NewGuid():N}";
+        var values = new uint[] { 0, 1, uint.MaxValue };
+
+        await _sut.CreateSingleColumnTableAsync(
+            tableName: tableName1,
+            clickhouseType: "UInt32");
+        await _sut.CreateSingleColumnTableAsync(
+            tableName: tableName2,
+            clickhouseType: "UInt32");
+
+        using var writer1 = new NativeFormatBlockWriter(
+            columnsCount: 1,
+            rowsCount: values.Length);
+        using var writer2 = new NativeFormatBlockWriter(
+            columnsCount: 1,
+            rowsCount: values.Length);
+
+        writer1
+            .CreateUInt32ColumnWriter("Value")
+            .WriteAll(values);
+        writer2
+            .CreateUInt32ColumnWriter("Value")
+            .WriteAll(values);
+
+        await _sut.InsertNativePayloadParallel(
+            tableName1: tableName1,
+            tableName2: tableName2,
+            payload1: writer1.GetWrittenBuffer(),
+            payload2: writer2.GetWrittenBuffer());
+
+        var fetched1 = await _sut.FetchCsvColumnAsync(
+            tableName1,
+            s => uint.Parse(s, CultureInfo.InvariantCulture));
+        var fetched2 = await _sut.FetchCsvColumnAsync(
+            tableName2,
+            s => uint.Parse(s, CultureInfo.InvariantCulture));
+
+        fetched1
+            .Should()
+            .Equal(values);
+    }
 
     [Fact]
     public async Task UInt32Column_RoundTripsNativeBlock()
@@ -295,6 +342,45 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
     }
 
     [Fact]
+    public async Task StringColumn_RoundTripsNativeBlock_LargeRandomSet()
+    {
+        _tableName = $"default.native_string_{Guid.NewGuid():N}";
+
+        const int rows = 100_000;
+
+        string RandomString(int length)
+        {
+            return length.ToString();
+        }
+
+        // Generate random strings
+        var values = Enumerable
+            .Range(0, rows)
+            .Select(i => RandomString(i))
+            .ToArray();
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "String");
+
+        using var writer = new NativeFormatBlockWriter(
+            columnsCount: 1,
+            rowsCount: values.Length);
+
+        writer
+            .CreateStringColumnWriter("Value")
+            .WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(
+            _tableName,
+            static s => s);
+
+        fetched
+            .Should()
+            .Equal(values);
+    }
+
+    [Fact]
     public async Task StringColumn_RoundTripsNativeBlock()
     {
         _tableName = $"default.native_string_{Guid.NewGuid():N}";
@@ -352,7 +438,7 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
     public async Task FixedStringColumn_RoundTripsNativeBlock()
     {
         _tableName = $"default.native_fixed_string_{Guid.NewGuid():N}";
-        var values = new[] { "short", "exact8ch", "pad" };
+        var values = new[] { "short", "exact8ch", "pad" }.OrderBy(i => i).ToArray();
 
         await _sut.CreateSingleColumnTableAsync(_tableName, "FixedString(8)");
 

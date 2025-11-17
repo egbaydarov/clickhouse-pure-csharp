@@ -59,9 +59,12 @@ public partial class NativeFormatBlockReader
         1_000_000_000_000_000_000L
     ];
 
-    private ulong _columnsCount;
-    private ulong _rowsCount;
+    private readonly ulong _columnsCount;
+    private readonly ulong _rowsCount;
     private ulong _columnsRead;
+    
+    public ulong RowsCount => _rowsCount;
+    public ulong ColumnsCount => _columnsCount;
 
     public NativeFormatBlockReader(
         ReadOnlyMemory<byte> bytes)
@@ -70,12 +73,6 @@ public partial class NativeFormatBlockReader
         _offset = 0;
 
         // Native format consists of blocks. We parse the first block header now.
-        ReadBlockHeader();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void ReadBlockHeader()
-    {
         // Some servers omit BlockInfo when it is empty and start directly with columns count.
         // Detect and handle both cases.
         _columnsCount = ReadUVarInt();

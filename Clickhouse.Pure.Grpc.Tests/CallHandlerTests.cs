@@ -46,9 +46,10 @@ public class CallHandlerTests
         {
             var commit = await sut.InsertBulkNumbersAsync(tableName, 1u, 2u, 3u);
 
-            commit.IsFailed()
+            commit
+                .Error
                 .Should()
-                .BeFalse();
+                .Be(null);
 
             var values = await sut.FetchInsertedNumbersAsync(tableName);
 

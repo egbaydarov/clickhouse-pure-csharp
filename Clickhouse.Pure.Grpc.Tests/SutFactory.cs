@@ -7,12 +7,14 @@ public static class SutFactory
         var username =  Environment.GetEnvironmentVariable("CLICKHOUSE_USER") ?? "default";
         var password =  Environment.GetEnvironmentVariable("CLICKHOUSE_PASSWORD") ?? "default";
         var router = ClickhouseGrpcConnectionFactory.Create(
-            endpoint: "http://127.0.0.1:9100",
+            endpoints: ["http://127.0.0.1:9100"],
             bootstrapUsername: username,
             bootstrapPassword: password,
-            useSsl: false);
+            useSsl: false,
+            port: 9100,
+            poolSize: 1);
 
-        var handler = new DefaultCallHandler(
+        var handler = new CompressingCallHandler(
             compression: "gzip",
             router: router, 
             password: password,
