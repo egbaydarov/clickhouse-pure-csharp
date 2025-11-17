@@ -16,6 +16,7 @@ using Clickhouse.Pure.Columns;
 using Clickhouse.Pure.Grpc;
 using FastMember;
 using Grpc.Core;
+using Exception = System.Exception;
 
 namespace Clickhouse.Pure.BenchmarkDotnet;
 
@@ -25,7 +26,7 @@ public class InsertBenchmarks
 {
     private BenchmarkDataset _dataset = null!;
     private BenchmarkOptions _options = null!;
-    private DefaultCallHandler? _pureDriver;
+    private CompressingCallHandler? _pureDriver;
     private ClickHouseConnection? _officialConnection;
 
     private string _pureDriverTable = string.Empty;
@@ -73,16 +74,16 @@ public class InsertBenchmarks
         var bulkWriter = await _pureDriver!.InputBulk($"INSERT INTO {_pureDriverTable} FORMAT Native").ConfigureAwait(false);
         try
         {
-            var wrote = await bulkWriter.WriteRowsBulkAsync(payload, hasMoreData: false).ConfigureAwait(false);
-            if (!wrote)
+            var error = await bulkWriter.WriteNext(payload, hasMoreData: false).ConfigureAwait(false);
+            if (error != null)
             {
-                throw new InvalidOperationException("Native bulk writer rejected payload.");
+                throw new InvalidOperationException(error.Message);
             }
 
-            var commit = await bulkWriter.Commit().ConfigureAwait(false);
-            if (commit.IsFailed())
+            var result = await bulkWriter.Commit().ConfigureAwait(false);
+            if (result.Error != null)
             {
-                throw commit.Exception!;
+                throw new Exception(result.Error.Message);
             }
         }
         finally
@@ -178,7 +179,7 @@ public class SingleColumnInsertBenchmarks
 {
     private BenchmarkOptions _options = null!;
     private BenchmarkDataset _dataset = null!;
-    private DefaultCallHandler? _pureDriver;
+    private CompressingCallHandler? _pureDriver;
     private ClickHouseConnection? _officialConnection;
 
     private string _pureDriverTable = string.Empty;
@@ -231,16 +232,16 @@ public class SingleColumnInsertBenchmarks
         var bulkWriter = await _pureDriver!.InputBulk($"INSERT INTO {_pureDriverTable} FORMAT Native").ConfigureAwait(false);
         try
         {
-            var wrote = await bulkWriter.WriteRowsBulkAsync(payload, hasMoreData: false).ConfigureAwait(false);
-            if (!wrote)
+            var error = await bulkWriter.WriteNext(payload, hasMoreData: false).ConfigureAwait(false);
+            if (error != null)
             {
-                throw new InvalidOperationException("Native bulk writer rejected payload.");
+                throw new InvalidOperationException(error.Message);
             }
 
-            var commit = await bulkWriter.Commit().ConfigureAwait(false);
-            if (commit.IsFailed())
+            var result = await bulkWriter.Commit().ConfigureAwait(false);
+            if (result.Error != null)
             {
-                throw commit.Exception!;
+                throw new Exception(result.Error.Message);
             }
         }
         finally
@@ -334,9 +335,9 @@ internal sealed class InsertBenchmarkConfig : ManualConfig
 
 internal static class InsertBenchmarksHelper
 {
-    internal static DefaultCallHandler CreatePureDriver(BenchmarkOptions options)
+    internal static CompressingCallHandler CreatePureDriver(BenchmarkOptions options)
     {
-        return new DefaultCallHandler(
+        return new CompressingCallHandler(
             router: new ClickHouseGrpcRouter(
                 seedEndpoints: [options.GrpcSeedEndpoint],
                 port: options.GrpcPort,
@@ -355,7 +356,7 @@ internal static class InsertBenchmarksHelper
         return connection;
     }
 
-    internal static async Task ExecuteAsync(DefaultCallHandler handler, string sql)
+    internal static async Task ExecuteAsync(CompressingCallHandler handler, string sql)
     {
         var (_, error) = await handler.QueryRawString(sql).ConfigureAwait(false);
         if (error is not null)
@@ -364,7 +365,7 @@ internal static class InsertBenchmarksHelper
         }
     }
 
-    internal static async Task TruncateTableAsync(DefaultCallHandler handler, string tableName, Func<Task> recreateTableAsync)
+    internal static async Task TruncateTableAsync(CompressingCallHandler handler, string tableName, Func<Task> recreateTableAsync)
     {
         try
         {

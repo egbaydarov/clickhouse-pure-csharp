@@ -5,10 +5,10 @@ namespace Clickhouse.Pure.Grpc.Tests;
 
 public class Sut
 {
-    private readonly DefaultCallHandler _handler;
+    private readonly CompressingCallHandler _handler;
 
     public Sut(
-        DefaultCallHandler handler)
+        CompressingCallHandler handler)
     {
         _handler = handler;
     }
@@ -41,17 +41,17 @@ public class Sut
                 var payload = Encoding.UTF8.GetBytes(s: rowList[index: i]);
                 var hasMore = i < rowList.Count - 1;
 
-                var wrote = await bulkWriter.WriteRowsBulkAsync(inputData: payload, hasMoreData: hasMore);
-                if (!wrote)
+                var error = await bulkWriter.WriteNext(inputData: payload, hasMoreData: hasMore);
+                if (error != null)
                 {
-                    throw new InvalidOperationException(message: "Failed to write CSV payload.");
+                    throw new InvalidOperationException(error.Message);
                 }
             }
 
             var commit = await bulkWriter.Commit();
-            if (commit.IsFailed())
+            if (commit.Error != null)
             {
-                throw commit.Exception!;
+                throw new System.Exception(commit.Error.Message);
             }
         }
         finally
@@ -102,7 +102,7 @@ public class Sut
         return tableName;
     }
 
-    public async Task<CommitBulkReponse> InsertBulkNumbersAsync(
+    public async Task<(WriteProgress Progress, WriteError? Error)> InsertBulkNumbersAsync(
         string tableName,
         params uint[] values)
     {
@@ -128,8 +128,8 @@ public class Sut
                 var payload = Encoding.UTF8.GetBytes(values[i].ToString(CultureInfo.InvariantCulture));
                 var hasMore = i < values.Length - 1;
 
-                var wrote = await bulkWriter.WriteRowsBulkAsync(payload, hasMore);
-                if (!wrote)
+                var error = await bulkWriter.WriteNext(payload, hasMore);
+                if (error != null)
                 {
                     break;
                 }
@@ -167,7 +167,7 @@ public class Sut
         return values;
     }
 
-    public Task<NativeBulkReader> QueryNativeBulkAsync(string query)
+    public Task<BulkReader> QueryNativeBulkAsync(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -224,21 +224,61 @@ public class Sut
         var bulkWriter = await _handler.InputBulk($"INSERT INTO {tableName} FORMAT Native");
         try
         {
-            var wrote = await bulkWriter.WriteRowsBulkAsync(payload, hasMoreData: false);
-            if (!wrote)
+            var error = await bulkWriter.WriteNext(payload, hasMoreData: false);
+            if (error != null)
             {
-                throw new InvalidOperationException("Failed to write native block payload.");
+                throw new InvalidOperationException(error.Message);
             }
 
             var commit = await bulkWriter.Commit();
-            if (commit.IsFailed())
+            if (commit.Error != null)
             {
-                throw commit.Exception!;
+                throw new System.Exception(commit.Error.Message);
             }
         }
         finally
         {
             bulkWriter.Dispose();
+        }
+    }
+
+    public async Task InsertNativePayloadParallel(
+        string tableName1,
+        string tableName2,
+        ReadOnlyMemory<byte> payload1,
+        ReadOnlyMemory<byte> payload2)
+    {
+        var bulkWriter1 = await _handler.InputBulk($"INSERT INTO {tableName1} FORMAT Native");
+        var bulkWriter2 = await _handler.InputBulk($"INSERT INTO {tableName2} FORMAT Native");
+        try
+        {
+            var error1 = await bulkWriter1.WriteNext(payload1, hasMoreData: false);
+            var error2 = await bulkWriter2.WriteNext(payload2, hasMoreData: false);
+            if (error1 != null)
+            {
+                throw new InvalidOperationException(error1.Message);
+            }
+            if (error2 != null)
+            {
+                throw new InvalidOperationException(error2.Message);
+            }
+
+            var commit2 = await bulkWriter2.Commit();
+            if (commit2.Error != null)
+            {
+                throw new System.Exception(commit2.Error.Message);
+            }
+            bulkWriter2.Dispose();
+            var commit1 = await bulkWriter1.Commit();
+            if (commit1.Error != null)
+            {
+                throw new System.Exception(commit1.Error.Message);
+            }
+
+        }
+        finally
+        {
+            bulkWriter1.Dispose();
         }
     }
 
@@ -249,6 +289,7 @@ public class Sut
         return await FetchCsvColumnAsync(tableName, "Value", converter);
     }
 
+    //TODO: sort in tests and here
     public async Task<IReadOnlyList<T>> FetchCsvColumnAsync<T>(
         string tableName,
         string columnExpression,
@@ -294,31 +335,16 @@ public class Sut
         using var reader = await _handler.QueryNativeBulk("SELECT number FROM system.numbers LIMIT 5");
         var values = new List<ulong>();
 
-        while (true)
+        while (await reader.Read() is { } block)
         {
-            var response = await reader.ReadNext();
-
-            if (response.IsFailed())
-            {
-                throw response.Exception!;
-            }
-
-            if (response.Completed)
-            {
-                break;
-            }
-
-            if (!response.IsBlock())
-            {
-                continue;
-            }
-
-            var column = response.BlockReader.ReadUInt64Column();
+            var column = block.ReadUInt64Column();
             while (column.HasMoreRows())
             {
                 values.Add(column.ReadNext());
             }
         }
+
+        reader.GetState();
 
         return values;
     }

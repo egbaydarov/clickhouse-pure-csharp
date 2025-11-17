@@ -8,7 +8,7 @@ using Grpc.Core;
 
 namespace Clickhouse.Pure.Grpc;
 
-public sealed class DefaultCallHandler : IDisposable
+public sealed class CompressingCallHandler : IDisposable
 {
     private readonly ClickHouseGrpcRouter _router;
     private readonly QueryInfo _baseQueryInfo;
@@ -16,7 +16,7 @@ public sealed class DefaultCallHandler : IDisposable
     private readonly TimeSpan? _queryTimeout;
     private readonly MapField<string, string> _defaultSettings;
 
-    public DefaultCallHandler(
+    public CompressingCallHandler(
         ClickHouseGrpcRouter router,
         string password,
         string username,
@@ -75,6 +75,8 @@ public sealed class DefaultCallHandler : IDisposable
                     querySettings.MergeFrom(settings);
                 }
 
+                var sessionId = Guid.NewGuid().ToString();
+                var queryId = Guid.NewGuid().ToString();
                 await result.RequestStream.WriteAsync(
                     message: new QueryInfo
                     {
@@ -86,7 +88,8 @@ public sealed class DefaultCallHandler : IDisposable
                         Settings = { querySettings },
                         NextQueryInfo = true,
                         Database = database ?? _baseQueryInfo.Database,
-                        SessionId = Guid.NewGuid().ToString(),
+                        QueryId = queryId,
+                        SessionId = sessionId,
                         InputDataDelimiter = UnsafeByteOperations.UnsafeWrap(
                             bytes: Encoding.UTF8.GetBytes(s: inputDataDelimiter)
                                 .AsMemory()),
@@ -100,16 +103,19 @@ public sealed class DefaultCallHandler : IDisposable
         {
             var clientStreamingCall = await call;
 
-            return new BulkWriter(asyncResultWriter: clientStreamingCall, asyncException: null);
+            return new BulkWriter(
+                asyncResultWriter: clientStreamingCall,
+                error: null);
         }
         catch (System.Exception ex)
         {
             return new BulkWriter(
                 asyncResultWriter: null,
-                asyncException: new RpcException(status: new Status(
-                    statusCode: StatusCode.Unavailable,
-                    detail: ex.Message,
-                    debugException: ex)));
+                error: new WriteError()
+                {
+                    ClickhouseException = null,
+                    Exception = ex
+                });
         }
     }
 
@@ -224,7 +230,7 @@ public sealed class DefaultCallHandler : IDisposable
         }
     }
 
-    public async Task<NativeBulkReader> QueryNativeBulk(
+    public async Task<BulkReader> QueryNativeBulk(
         string query,
         string? database = null,
         Dictionary<string,string>? settings = null)
@@ -263,19 +269,20 @@ public sealed class DefaultCallHandler : IDisposable
         {
             var asyncResultReader = await call;
 
-            return new NativeBulkReader(
+            return new BulkReader(
                 asyncResultReader: asyncResultReader,
-                initialExceptionOnCreation: null);
+                error: null);
 
         }
         catch (System.Exception ex)
         {
-            return new NativeBulkReader(
+            return new BulkReader(
                 asyncResultReader: null,
-                initialExceptionOnCreation: new RpcException(new Status(
-                    statusCode: StatusCode.Unavailable,
-                    detail: ex.Message,
-                    debugException: ex)));
+                error: new ReadError()
+                {
+                    ClickhouseException = null,
+                    Exception = ex,
+                });
         }
     }
 

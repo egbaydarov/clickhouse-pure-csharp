@@ -49,6 +49,7 @@ public sealed class ClickHouseGrpcRouter : IDisposable
 
         private volatile int _next;
         private bool _disposed;
+        private readonly string _id = Guid.NewGuid().ToString();
 
         internal GrpcChannel GetNext()
         {

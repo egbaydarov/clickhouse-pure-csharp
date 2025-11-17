@@ -8,113 +8,144 @@ namespace Clickhouse.Pure.Grpc;
 public class BulkWriter : IDisposable
 {
     private AsyncClientStreamingCall<QueryInfo, Result>? _asyncResultWriter;
-    private RpcException? _asyncException;
+    private WriteError? _error;
+
+    private readonly Action<WriteError>? _onException;
+    private bool _isCommited;
 
     public BulkWriter(
         AsyncClientStreamingCall<QueryInfo, Result>? asyncResultWriter,
-        RpcException? asyncException)
+        WriteError? error,
+        Action<WriteError>? onException = null)
     {
-        _asyncException = asyncException;
+        _onException = onException;
+        _error = error;
         _asyncResultWriter = asyncResultWriter;
     }
 
-    public async Task<bool> WriteRowsBulkAsync(
+    public async Task<WriteError?> WriteNext(
         ReadOnlyMemory<byte> inputData,
         bool hasMoreData)
     {
         try
         {
-            if (_asyncResultWriter == null)
+            if (_error != null)
             {
-                return false;
+                return WriteError(_error);
             }
 
-            if (!inputData.IsEmpty)
+            if (_isCommited)
             {
-                await _asyncResultWriter.RequestStream.WriteAsync(
-                    message: new QueryInfo
-                    {
-                        InputData = UnsafeByteOperations.UnsafeWrap(inputData),
-                        NextQueryInfo = hasMoreData
-                    });
+                throw new InvalidOperationException("Writer commited. (Only single commit per one writer)");
+            }
 
-                if (!hasMoreData)
+            await _asyncResultWriter!.RequestStream.WriteAsync(
+                message: new QueryInfo
                 {
-                    await _asyncResultWriter.RequestStream.CompleteAsync();
-                }
+                    InputData = UnsafeByteOperations.UnsafeWrap(inputData),
+                    NextQueryInfo = hasMoreData
+                });
+
+            if (!hasMoreData)
+            {
+                await _asyncResultWriter.RequestStream.CompleteAsync();
             }
 
-            return true;
+            return null;
         }
         catch (System.Exception ex)
         {
             try
             {
-                var exception = await _asyncResultWriter!.ResponseAsync;
-                if (exception.Exception != null)
+                var result = await _asyncResultWriter!.ResponseAsync;
+                if (result.Exception != null)
                 {
-                    _asyncException = new RpcException(
-                        status: new Status(
-                            statusCode: StatusCode.Unavailable,
-                            detail: exception.Exception.ToString(),
-                            debugException: ex));
+                    return WriteError(new WriteError
+                    {
+                        Exception = null,
+                        ClickhouseException = result.Exception,
+                    });
 
-                    return false;
                 }
             }
             catch (System.Exception innerException)
             {
-                _asyncException = new RpcException(
-                    status: new Status(
-                        statusCode: StatusCode.Unavailable,
-                        detail: innerException.Message,
-                        debugException: ex));
-
-                return false;
+                return WriteError(new WriteError
+                {
+                    Exception = innerException,
+                    ClickhouseException = null,
+                });
             }
 
-            _asyncException = new RpcException(
-                status: new Status(statusCode: StatusCode.Unavailable, detail: ex.Message, debugException: ex));
-
-            return false;
+            return WriteError(new WriteError
+            {
+                Exception = ex,
+                ClickhouseException = null,
+            });
         }
     }
 
-    public async Task<CommitBulkReponse> Commit()
+    public async Task<(WriteProgress Progress, WriteError? Error)> Commit()
     {
         try
         {
-            if (_asyncResultWriter == null
-                || _asyncException != null)
+            if (_error != null)
             {
-                return new CommitBulkReponse(
-                    responseResult: null,
-                    exception: _asyncException);
+                return CommitError(_error);
             }
+            _isCommited = true;
 
-            var response = await _asyncResultWriter.ResponseAsync;
+            var response = await _asyncResultWriter!.ResponseAsync;
 
             if (response.Exception != null)
             {
-                return new CommitBulkReponse(
-                    responseResult: null,
-                    exception: new RpcException(
-                        status: new Status(statusCode: StatusCode.Unavailable,
-                        detail: response.Exception.DisplayText,
-                        debugException: null)));
+                return CommitError(
+                    new WriteError()
+                    {
+                        Exception = null,
+                        ClickhouseException = response.Exception,
+                    });
             }
 
-            return new CommitBulkReponse(
-                responseResult: response,
-                exception: null);
+            return (
+                new WriteProgress()
+                {
+                    WrittenBytes = (long)response.Progress.WrittenBytes,
+                    WrittenRows = (long)response.Progress.WrittenRows,
+                }, 
+                null);
         }
         catch (System.Exception ex)
         {
-            return new CommitBulkReponse(
-                responseResult: null,
-                exception: new RpcException(status: new Status(statusCode: StatusCode.Unavailable,
-                    detail: ex.Message, debugException: ex)));
+            return CommitError(
+                new WriteError()
+                {
+                    Exception = ex,
+                    ClickhouseException = null,
+                });
         }
+    }
+
+    private WriteError WriteError(
+        WriteError error)
+    {
+        _onException?.Invoke(obj: error);
+        _error = error;
+
+        return error;
+    }
+
+    private (WriteProgress Progress, WriteError? Error) CommitError(
+        WriteError error)
+    {
+        _onException?.Invoke(obj: error);
+
+        return (new WriteProgress
+            {
+                WrittenBytes = 0,
+                WrittenRows = 0
+            },
+            error);
     }
 
     public void Dispose()
