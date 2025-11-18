@@ -140,12 +140,9 @@ public sealed class ClickHouseGrpcRouter : IDisposable
     public async Task<T> Call<T>(
         Func<ClickHouse.ClickHouseClient, CancellationToken, Task<T>> handler,
         Action<string>? logHandler = null,
-        int maxTries = 2,
+        int maxTries = 1,
         CancellationToken ct = default)
     {
-        var result = Task.FromException<T>(
-            new RpcException(new Status(StatusCode.Unavailable, "Not cluster endpoints data found.")));
-
         for (var i = 0; i < _endpoints.Count; i++)
         {
             var ep = _endpoints[(_primary + i) % _endpoints.Count];
@@ -172,16 +169,18 @@ public sealed class ClickHouseGrpcRouter : IDisposable
 
                 // some backoff
                 Thread.Sleep(200);
+                continue;
             }
             catch (System.Exception ex)
             {
                 var unavailable = new Status(StatusCode.Unavailable, ex.Message, ex);
 
-                result = Task.FromException<T>(new RpcException(unavailable));
+                return await Task.FromException<T>(new RpcException(unavailable));
             }
         }
 
-        return await result;
+        return await Task.FromException<T>(
+            new RpcException(new Status(StatusCode.Unavailable, "Not cluster endpoints data found.")));
     }
 
     private void InitClusterConnectionPool(string username,
