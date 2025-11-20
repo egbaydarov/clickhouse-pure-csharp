@@ -31,10 +31,14 @@ public interface ISequentialColumnWriter<in T, out TWriter> where TWriter : allo
 /// This reader focuses on reading a single block of data and exposing typed column iterators.
 /// Only a subset of types used is implemented.
 /// </summary>
+[DebuggerDisplay("{Utf8String,nq}")]
 public partial class NativeFormatBlockReader
 {
     private const int MaxVarintLen64 = 10;
+
     private readonly ReadOnlyMemory<byte> _buffer;
+    private string Utf8String => Encoding.UTF8.GetString(_buffer.Span);
+
     private int _offset;
     private static readonly long[] Pow10 =
     [
