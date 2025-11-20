@@ -75,6 +75,12 @@ public sealed class BulkReader : IDisposable
                 return await Read();
             }
 
+            if (cur.Stats != null)
+            {
+                //TODO: handle stats
+                return await Read();
+            }
+
             var bytes = cur.Output;
             var block = new NativeFormatBlockReader(bytes: bytes.Memory);
 
