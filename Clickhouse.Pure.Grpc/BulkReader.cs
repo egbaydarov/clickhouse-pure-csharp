@@ -36,64 +36,79 @@ public sealed class BulkReader : IDisposable
     {
         if (_error != null)
         {
-            return SetError(
-                error: _error);
+            return SetError(_error);
         }
 
         try
         {
-            var hasSome = await _asyncResultReader!.ResponseStream.MoveNext();
-            if (!hasSome)
+            // Keep reading until the stream is exhausted
+            while (await _asyncResultReader!.ResponseStream.MoveNext())
             {
-                return null;
-            }
+                var cur = _asyncResultReader.ResponseStream.Current;
 
-            var cur = this._asyncResultReader.ResponseStream.Current;
-            if (cur.Exception != null)
-            {
-                return SetError(
-                    error: new ReadError()
+                // 1. Progress handling (and maybe output)
+                if (cur.Progress != null)
+                {
+                    var progress = cur.Progress;
+
+                    var readProgress = new ReadProgress
                     {
-                        Exception = null,
-                        ClickhouseException = cur.Exception,
-                    });
-            }
-            if (cur.Progress != null)
-            {
-                // between blocks (if many) clickhouse reports progress
-                _onProgress?.Invoke(
-                    obj: new ReadProgress()
+                        ReadBytes       = (long)progress.ReadBytes,
+                        ReadRows        = (long)progress.ReadRows,
+                        TotalRowsToRead = (long)progress.TotalRowsToRead
+                    };
+
+                    _onProgress?.Invoke(readProgress);
+
+                    _readTotalProgress.TotalRowsToRead = (long)progress.TotalRowsToRead;
+                    _readTotalProgress.ReadBytes      += (long)progress.ReadBytes;
+                    _readTotalProgress.ReadRows       += (long)progress.ReadRows;
+
+                    if (cur.Output != null && !cur.Output.Memory.IsEmpty)
                     {
-                        ReadBytes = (long)cur.Progress.ReadBytes,
-                        ReadRows = (long)cur.Progress.ReadRows,
-                        TotalRowsToRead = (long)cur.Progress.TotalRowsToRead,
+                        return new NativeFormatBlockReader(cur.Output.Memory);
+                    }
+                }
+
+                // 2. Stats handling (and maybe output)
+                if (cur.Stats != null)
+                {
+                    // TODO: handle
+                    if (cur.Output != null && !cur.Output.Memory.IsEmpty)
+                    {
+                        return new NativeFormatBlockReader(cur.Output.Memory);
+                    }
+                }
+
+                // 3. Exception handling
+                if (cur.Exception != null)
+                {
+                    return SetError(new ReadError
+                    {
+                        Exception         = null,
+                        ClickhouseException = cur.Exception
                     });
-                _readTotalProgress.TotalRowsToRead = (long)cur.Progress.TotalRowsToRead;
-                _readTotalProgress.ReadBytes += (long)cur.Progress.ReadBytes;
-                _readTotalProgress.ReadRows += (long)cur.Progress.ReadRows;
+                }
 
-                return await Read();
+                // 4. Plain output (no progress/stats)
+                if (cur.Output != null && !cur.Output.Memory.IsEmpty)
+                {
+                    return new NativeFormatBlockReader(cur.Output.Memory);
+                }
+
+                // the loop continues to read the next one
             }
 
-            if (cur.Stats != null)
-            {
-                //TODO: handle stats
-                return await Read();
-            }
-
-            var bytes = cur.Output;
-            var block = new NativeFormatBlockReader(bytes: bytes.Memory);
-
-            return block;
+            // Stream ended
+            return null;
         }
         catch (System.Exception ex)
         {
-            return SetError(
-                error: new ReadError
-                {
-                    Exception = ex,
-                    ClickhouseException = null,
-                });
+            return SetError(new ReadError
+            {
+                Exception = ex,
+                ClickhouseException = null
+            });
         }
     }
 
