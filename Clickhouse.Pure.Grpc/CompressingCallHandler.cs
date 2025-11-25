@@ -33,7 +33,7 @@ public sealed class CompressingCallHandler : IDisposable
             TransportCompressionType = compression,
         };
         _router = router;
-        
+
         var settings = new MapField<string, string>();
         if (defaultSettings != null)
         {
@@ -94,7 +94,7 @@ public sealed class CompressingCallHandler : IDisposable
                             bytes: Encoding.UTF8.GetBytes(s: inputDataDelimiter)
                                 .AsMemory()),
                     }, cancellationToken: ct);
-                
+
                 return result;
             },
             logHandler: Console.WriteLine);
@@ -218,7 +218,7 @@ public sealed class CompressingCallHandler : IDisposable
         try
         {
             var result = await call;
-            
+
             return (result, null);
         }
         catch (System.Exception ex)

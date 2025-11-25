@@ -6,6 +6,19 @@ namespace Clickhouse.Pure.Grpc;
 
 public static class ClickhouseGrpcConnectionFactory
 {
+    public static ClickHouseGrpcRouter CreateNoSniff(
+        IEnumerable<Uri> hosts,
+        ushort port = 9100,
+        int poolSize = 1,
+        GrpcChannelOptions? options = null)
+    {
+        return new ClickHouseGrpcRouter(
+            hosts: hosts,
+            port: port,
+            poolSize: poolSize,
+            channelOptions: options);
+    }
+
     public static ClickHouseGrpcRouter Create(
         string endpoint,
         string bootstrapUsername,

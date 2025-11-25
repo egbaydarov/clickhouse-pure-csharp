@@ -3,6 +3,7 @@ using Grpc.Core;
 using Grpc.Net.Client;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
@@ -19,7 +20,7 @@ public sealed class ClickHouseGrpcRouter : IDisposable
     private readonly bool _useSsl;
     private readonly Lock _sync = new();
 
-    private readonly List<string> _seedEndpoints;
+    private volatile List<string> _seedEndpoints;
     private volatile List<string> _endpoints;
 
     private FrozenDictionary<string, RoundRobinChannelPool> _channels;
@@ -107,6 +108,22 @@ public sealed class ClickHouseGrpcRouter : IDisposable
     }
 
     public ClickHouseGrpcRouter(
+        IEnumerable<Uri> hosts,
+        ushort port = 9100,
+        int poolSize = 1,
+        GrpcChannelOptions? channelOptions = null)
+    {
+        _grpcPort = port;
+
+        _channelOptions = channelOptions ?? ChannelOptions;
+        _channels = FrozenDictionary<string, RoundRobinChannelPool>.Empty;
+
+        InitClusterConnectionPool(
+            hosts: hosts.ToArray(),
+            poolSize: poolSize);
+    }
+
+    public ClickHouseGrpcRouter(
         IEnumerable<string> seedEndpoints,
         ushort port = 9100,
         string username = "default",
@@ -129,7 +146,7 @@ public sealed class ClickHouseGrpcRouter : IDisposable
         _channelOptions = channelOptions ?? ChannelOptions;
         _channels = FrozenDictionary<string, RoundRobinChannelPool>.Empty;
 
-        InitClusterConnectionPool(
+        InitSniffingClusterConnectionPool(
             username: username,
             password: password,
             poolSize: poolSize,
@@ -182,7 +199,7 @@ public sealed class ClickHouseGrpcRouter : IDisposable
             new RpcException(new Status(StatusCode.Unavailable, "Not cluster endpoints data found.")));
     }
 
-    private void InitClusterConnectionPool(string username,
+    private void InitSniffingClusterConnectionPool(string username,
         string password,
         int poolSize,
         TimeSpan connectionTimeout)
@@ -220,6 +237,37 @@ public sealed class ClickHouseGrpcRouter : IDisposable
                         keySelector: endpoint => endpoint);
                 _primary = Random.Shared.Next(_endpoints.Count);
             }
+        }
+    }
+
+    [MemberNotNull(nameof(_endpoints))]
+    [MemberNotNull(nameof(_seedEndpoints))]
+    private void InitClusterConnectionPool(
+        Uri[] hosts,
+        int poolSize)
+    {
+        var endpoints = hosts.Select(u => u.AbsoluteUri).ToList();
+
+        if (endpoints.Count > 0)
+        {
+            lock (_sync)
+            {
+                _endpoints = endpoints;
+                _seedEndpoints = endpoints;
+                _channels = _endpoints
+                    .ToFrozenDictionary(
+                        elementSelector: endpoint => new RoundRobinChannelPool(
+                            size: poolSize,
+                            factory: () => GrpcChannel.ForAddress(
+                                address: endpoint,
+                                channelOptions: _channelOptions)),
+                        keySelector: endpoint => endpoint);
+                _primary = Random.Shared.Next(_endpoints.Count);
+            }
+        }
+        else
+        {
+            throw new ArgumentException("Need at least one endpoint", nameof(hosts));
         }
     }
 
