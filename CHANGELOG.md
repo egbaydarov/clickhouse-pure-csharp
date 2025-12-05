@@ -1,4 +1,7 @@
 ## Changelog
+<a name="2.2.28"></a>
+## [2.2.28](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.2.27...v2.2.28) (2025-12-05)
+
 <a name="2.2.27"></a>
 ## [2.2.27](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.2.26...v2.2.27) (2025-12-05)
 
