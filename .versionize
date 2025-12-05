@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/versionize/versionize/main/schemas/versionize.schema.json",
+  "sign": true,
+  "tagOnly": true,
+  "skipDirty": true,
+  "changelog": {
+    "header": "## Changelog",
+    "includeAllCommits": true,
+    "sections": [
+      {
+        "type": "feat",
+        "section": "✨ Features",
+        "hidden": false
+      },
+      {
+        "type": "fix",
+        "section": "🐛 Bug Fixes",
+        "hidden": true
+      },
+      {
+        "type": "perf",
+        "section": "🚀 Performance",
+        "hidden": false
+      }
+    ],
+    "aggregatePrereleases": true,
+    "otherSection": "Not Important",
+      "linkTemplates": {
+      "issueLink": "https://github.com/egbaydarov/clichouse-pure-csharp/issues/{issue}",
+      "commitLink": "https://github.com/egbaydarov/clichouse-pure-csharp/commit/{commitSha}",
+      "versionTagLink": "https://github.com/egbaydarov/clichouse-pure-csharp/compare/{previousTag}...{currentTag}"
+    }
+  }
+}
