@@ -85,7 +85,7 @@ public partial class NativeFormatBlockWriter
         private const int InitialCapacity = 1024;
 
         private readonly ulong _blockIndex;
-        private NativeFormatBlockWriter _writer;
+        private readonly NativeFormatBlockWriter _writer;
         private readonly int _rows;
         private byte[] _buffer;
         private int _offset;
@@ -149,7 +149,7 @@ public partial class NativeFormatBlockWriter
 
         public NativeFormatBlockWriter WriteAll(IEnumerable<string> values)
         {
-            if (values is null) throw new ArgumentNullException(nameof(values));
+            ArgumentNullException.ThrowIfNull(values);
             foreach (var value in values)
             {
                 WriteNext(value);

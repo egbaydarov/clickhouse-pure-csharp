@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Google.Protobuf;
 using Google.Protobuf.Collections;
@@ -53,7 +54,7 @@ public sealed class CompressingCallHandler : IDisposable
     /// Use that param for formats like CSV,
     /// TabSeparated, TSKV, JSONEachRow, Template, CustomSeparated and Protobuf</param>
     /// <param name="settings">arbitrary settings supported by clickhouse server (merged with default provided in constructor)</param>
-    /// <returns></returns>
+    /// <returns>Object with API to write columns</returns>
     public async Task<BulkWriter> InputBulk(
         string initialQuery,
         string? database = null,
@@ -146,8 +147,8 @@ public sealed class CompressingCallHandler : IDisposable
                 var result = client
                     .ExecuteQuery(
                         request: queryInfo,
-                        cancellationToken: ct,
-                        deadline: GetQueryDeadline());
+                        deadline: GetQueryDeadline(),
+                        cancellationToken: ct);
 
                 return Task.FromResult(result);
             },
@@ -258,8 +259,9 @@ public sealed class CompressingCallHandler : IDisposable
 
                 var result = client
                     .ExecuteQueryWithStreamOutput(
+                        request: queryInfo,
                         deadline: GetQueryDeadline(),
-                        request: queryInfo);
+                        cancellationToken: CancellationToken.None);
 
                 return Task.FromResult(result);
             },

@@ -28,7 +28,7 @@ public sealed class ClickHouseGrpcRouter : IDisposable
     private readonly GrpcChannelOptions _channelOptions;
     public static readonly GrpcChannelOptions ChannelOptions = new()
     {
-        MaxReceiveMessageSize = null, 
+        MaxReceiveMessageSize = null,
         HttpHandler = new SocketsHttpHandler
         {
             KeepAlivePingDelay = TimeSpan.FromSeconds(5),
@@ -55,10 +55,7 @@ public sealed class ClickHouseGrpcRouter : IDisposable
         {
             lock (_sync)
             {
-                if (_disposed)
-                {
-                    throw new ObjectDisposedException(nameof(RoundRobinChannelPool));
-                }
+                ObjectDisposedException.ThrowIf(_disposed, this);
 
                 var index = _next;
                 _next = index + 1;
@@ -277,9 +274,9 @@ public sealed class ClickHouseGrpcRouter : IDisposable
         {
             return rex.StatusCode
                 is StatusCode.Unavailable
-                or StatusCode.DeadlineExceeded 
+                or StatusCode.DeadlineExceeded
                 or StatusCode.ResourceExhausted
-                or StatusCode.Internal 
+                or StatusCode.Internal
                 or StatusCode.Aborted;
         }
 

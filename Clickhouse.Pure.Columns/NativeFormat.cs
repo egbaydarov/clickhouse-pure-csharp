@@ -9,7 +9,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Net;
-using System.Runtime.InteropServices.ComTypes;
 
 namespace Clickhouse.Pure.Columns;
 
@@ -66,7 +65,7 @@ public partial class NativeFormatBlockReader
     private readonly ulong _columnsCount;
     private readonly ulong _rowsCount;
     private ulong _columnsRead;
-    
+
     public ulong RowsCount => _rowsCount;
     public ulong ColumnsCount => _columnsCount;
 
@@ -197,7 +196,7 @@ public partial class NativeFormatBlockWriter : IDisposable
 
     private readonly ulong _columnsCount;
     private readonly ulong _rowsCount;
-    
+
     private readonly byte[] _blockHeader;
     private readonly int _blockHeaderLength;
 
@@ -225,12 +224,12 @@ public partial class NativeFormatBlockWriter : IDisposable
         _headersLength = new int[_columnsCount];
         _data = new byte[_columnsCount][];
         _dataLength = new int[_columnsCount];
-        
+
         _blockHeader = new byte[MaxVarintLen64 * 2];
 
         var buffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2);
         var offset = 0;
-        
+
         offset += WriteUVarInt(buffer.AsSpan(offset), _columnsCount);
         offset += WriteUVarInt(buffer.AsSpan(offset), _rowsCount);
 
@@ -273,7 +272,7 @@ public partial class NativeFormatBlockWriter : IDisposable
     {
         var byteCount = Encoding.UTF8.GetByteCount(str);
         var offset = WriteUVarInt(destination, (ulong)byteCount);
-        offset += Encoding.UTF8.GetBytes(str.AsSpan(), destination.Slice(offset));
+        offset += Encoding.UTF8.GetBytes(str.AsSpan(), destination[offset..]);
         return offset;
     }
 
@@ -291,8 +290,8 @@ public partial class NativeFormatBlockWriter : IDisposable
 
         var nameByteCount = Encoding.UTF8.GetByteCount(columnName);
         var typeByteCount = Encoding.UTF8.GetByteCount(typeName);
-        var headerBuffer = ArrayPool<byte>.Shared.Rent(MaxVarintLen64 * 2 + nameByteCount + typeByteCount);
-        
+        var headerBuffer = ArrayPool<byte>.Shared.Rent((MaxVarintLen64 * 2) + nameByteCount + typeByteCount);
+
         var offset = 0;
         offset += WriteHeaderString(headerBuffer.AsSpan(offset), columnName);
         offset += WriteHeaderString(headerBuffer.AsSpan(offset), typeName);
@@ -366,14 +365,11 @@ public partial class NativeFormatBlockWriter : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int WriteUtf8StringValue(Span<byte> destination, string value)
     {
-        if (value is null)
-        {
-            throw new ArgumentNullException(nameof(value));
-        }
+        ArgumentNullException.ThrowIfNull(value);
 
         var byteCount = Encoding.UTF8.GetByteCount(value);
         var offset = WriteUVarInt(destination, (ulong)byteCount);
-        offset += Encoding.UTF8.GetBytes(value.AsSpan(), destination.Slice(offset));
+        offset += Encoding.UTF8.GetBytes(value.AsSpan(), destination[offset..]);
         return offset;
     }
 

@@ -16,7 +16,7 @@ public static class SutFactory
 
         var handler = new CompressingCallHandler(
             compression: "gzip",
-            router: router, 
+            router: router,
             password: password,
             queryTimeout: TimeSpan.FromSeconds(300),
             defaultSettings: new Dictionary<string, string> { { "insert_quorum","auto" } },

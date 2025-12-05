@@ -128,10 +128,7 @@ public sealed class BulkReader : IDisposable
 
     public void Dispose()
     {
-        if (_asyncResultReader != null)
-        {
-            _asyncResultReader.Dispose();
-            _asyncResultReader = null;
-        }
+        _asyncResultReader?.Dispose();
+        _asyncResultReader = null;
     }
 }
