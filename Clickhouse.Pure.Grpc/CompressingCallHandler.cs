@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Google.Protobuf;
 using Google.Protobuf.Collections;
@@ -53,7 +55,7 @@ public sealed class CompressingCallHandler : IDisposable
     /// Use that param for formats like CSV,
     /// TabSeparated, TSKV, JSONEachRow, Template, CustomSeparated and Protobuf</param>
     /// <param name="settings">arbitrary settings supported by clickhouse server (merged with default provided in constructor)</param>
-    /// <returns></returns>
+    /// <returns>Object with API to write columns</returns>
     public async Task<BulkWriter> InputBulk(
         string initialQuery,
         string? database = null,
@@ -140,14 +142,14 @@ public sealed class CompressingCallHandler : IDisposable
                     TransportCompressionType = _baseQueryInfo.TransportCompressionType,
                     Query = query,
                     Database = database ?? _baseQueryInfo.Database,
-                    Settings = { querySettings }
+                    Settings = { querySettings },
                 };
 
                 var result = client
                     .ExecuteQuery(
                         request: queryInfo,
-                        cancellationToken: ct,
-                        deadline: GetQueryDeadline());
+                        deadline: GetQueryDeadline(),
+                        cancellationToken: ct);
 
                 return Task.FromResult(result);
             },
@@ -183,6 +185,7 @@ public sealed class CompressingCallHandler : IDisposable
     public async Task<(Result?, RpcException?)> QueryRawResult(
         string query,
         string? database = null,
+        string? sessionId = null,
         Dictionary<string,string>? settings = null)
     {
         var call = _router.Call<Result>(
@@ -203,6 +206,7 @@ public sealed class CompressingCallHandler : IDisposable
                     Query = query,
                     Settings = { querySettings },
                     Database = database ?? _baseQueryInfo.Database,
+                    SessionId = sessionId ?? Guid.NewGuid().ToString()
                 };
 
                 var result = client
@@ -230,9 +234,86 @@ public sealed class CompressingCallHandler : IDisposable
         }
     }
 
+    //TODO: investigate that better on clickhouse server side
+//    public async Task<BulkReader> QueryNativeBulk(
+//        string[] queries,
+//        string? database = null,
+//        Dictionary<string,string>? settings = null)
+//    {
+//        var call = _router.Call<AsyncDuplexStreamingCall<QueryInfo, Result>>(
+//            handler: async (client, _) =>
+//            {
+//                var querySettings = _defaultSettings.Clone();
+//                if (settings != null)
+//                {
+//                    querySettings.MergeFrom(settings);
+//                }
+//
+//                var result = client
+//                    .ExecuteQueryWithStreamIO(
+//                        headers: new Metadata()
+//                        {
+//                            //TODO: add tracing option
+//                            //{"traceparent", ""},
+//                            //{"tracestate", ""}
+//                        },
+//                        cancellationToken: CancellationToken.None);
+//
+//                for (int i = 0; i < queries.Length; ++i)
+//                {
+//                    var queryInfo = new QueryInfo
+//                    {
+//                        UserName = _baseQueryInfo.UserName,
+//                        Password = _baseQueryInfo.Password,
+//                        TransportCompressionLevel = _baseQueryInfo.TransportCompressionLevel,
+//                        TransportCompressionType = _baseQueryInfo.TransportCompressionType,
+//                        OutputFormat = "Native",
+//                        Settings = { querySettings },
+//                        Query = queries[i],
+//                        Database = database ?? _baseQueryInfo.Database,
+//                        SessionId = sessionId,
+//                        QueryId = Guid.NewGuid().ToString(),
+//                    };
+//
+//                    await result
+//                      .RequestStream
+//                      .WriteAsync(queryInfo, CancellationToken.None);
+//                }
+//                await result
+//                  .RequestStream
+//                  .CompleteAsync();
+//
+//                return result;
+//            },
+//            logHandler: Console.WriteLine);
+//
+//        try
+//        {
+//            var asyncResultReader = await call;
+//
+//            return new BulkReader(
+//                asyncResultReader: new GrpcCall(
+//                    asyncResultReader: null,
+//                    asyncDuplexResultReader: asyncResultReader),
+//                error: null);
+//
+//        }
+//        catch (System.Exception ex)
+//        {
+//            return new BulkReader(
+//                asyncResultReader: null,
+//                error: new ReadError()
+//                {
+//                    ClickhouseException = null,
+//                    Exception = ex,
+//                });
+//        }
+//    }
+
     public async Task<BulkReader> QueryNativeBulk(
         string query,
         string? database = null,
+        string? sessionId = null,
         Dictionary<string,string>? settings = null)
     {
         var call = _router.Call<AsyncServerStreamingCall<Result>>(
@@ -254,12 +335,14 @@ public sealed class CompressingCallHandler : IDisposable
                     Settings = { querySettings },
                     Query = query,
                     Database = database ?? _baseQueryInfo.Database,
+                    SessionId = sessionId ?? Guid.NewGuid().ToString(),
                 };
 
                 var result = client
                     .ExecuteQueryWithStreamOutput(
+                        request: queryInfo,
                         deadline: GetQueryDeadline(),
-                        request: queryInfo);
+                        cancellationToken: CancellationToken.None);
 
                 return Task.FromResult(result);
             },
@@ -270,7 +353,9 @@ public sealed class CompressingCallHandler : IDisposable
             var asyncResultReader = await call;
 
             return new BulkReader(
-                asyncResultReader: asyncResultReader,
+                asyncResultReader: new GrpcCall(
+                    asyncResultReader: asyncResultReader,
+                    asyncDuplexResultReader: null),
                 error: null);
 
         }

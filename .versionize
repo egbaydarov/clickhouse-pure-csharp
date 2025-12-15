@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/versionize/versionize/main/schemas/versionize.schema.json",
-  "sign": true,
+  "sign": false,
   "tagOnly": true,
   "skipDirty": true,
   "changelog": {

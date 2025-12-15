@@ -112,7 +112,7 @@ public class BulkWriter : IDisposable
                 {
                     WrittenBytes = (long)response.Progress.WrittenBytes,
                     WrittenRows = (long)response.Progress.WrittenRows,
-                }, 
+                },
                 null);
         }
         catch (System.Exception ex)

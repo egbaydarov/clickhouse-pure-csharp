@@ -5,9 +5,82 @@ using Clickhouse.Pure.Columns;
 
 namespace Clickhouse.Pure.Grpc;
 
+public sealed class GrpcCall : IDisposable
+{
+    private readonly AsyncServerStreamingCall<Result>? _asyncResultReader;
+    private readonly AsyncDuplexStreamingCall<QueryInfo, Result>? _asyncDuplexResultReader;
+
+    public GrpcCall(
+        AsyncServerStreamingCall<Result>? asyncResultReader,
+        AsyncDuplexStreamingCall<QueryInfo, Result>? asyncDuplexResultReader)
+    {
+        if (asyncResultReader != null)
+        {
+            if (asyncDuplexResultReader != null)
+            {
+                throw new InvalidOperationException("State is invalid");
+            }
+
+            _asyncResultReader = asyncResultReader;
+            return;
+        }
+
+        if (asyncDuplexResultReader != null)
+        {
+            if (asyncResultReader != null)
+            {
+                throw new InvalidOperationException("State is invalid");
+            }
+
+            _asyncDuplexResultReader = asyncDuplexResultReader;
+            return;
+        }
+
+        throw new InvalidOperationException("State is invalid");
+    }
+
+    public Task<bool> MoveNext()
+    {
+        if (_asyncDuplexResultReader != null)
+        {
+            return _asyncDuplexResultReader.ResponseStream.MoveNext();
+        }
+
+        if (_asyncResultReader != null)
+        {
+            return _asyncResultReader.ResponseStream.MoveNext();
+        }
+
+        throw new InvalidOperationException("State is invalid");
+    }
+
+    public void Dispose()
+    {
+        _asyncResultReader?.Dispose();
+        _asyncDuplexResultReader?.Dispose();
+    }
+
+    public Result Current {
+        get
+        {
+            if (_asyncDuplexResultReader != null)
+            {
+                return _asyncDuplexResultReader.ResponseStream.Current;
+            }
+
+            if (_asyncResultReader != null)
+            {
+                return _asyncResultReader.ResponseStream.Current;
+            }
+
+            throw new InvalidOperationException("State is invalid");
+        }
+    }
+}
+
 public sealed class BulkReader : IDisposable
 {
-    private AsyncServerStreamingCall<Result>? _asyncResultReader;
+    private GrpcCall? _asyncResultReader;
     private ReadError? _error;
 
     private readonly Action<ReadProgress>? _onProgress;
@@ -21,7 +94,7 @@ public sealed class BulkReader : IDisposable
     };
 
     public BulkReader(
-        AsyncServerStreamingCall<Result>? asyncResultReader,
+        GrpcCall? asyncResultReader,
         ReadError? error,
         Action<ReadError>? onException = null,
         Action<ReadProgress>? onProgress = null)
@@ -42,9 +115,9 @@ public sealed class BulkReader : IDisposable
         try
         {
             // Keep reading until the stream is exhausted
-            while (await _asyncResultReader!.ResponseStream.MoveNext())
+            while (await _asyncResultReader!.MoveNext())
             {
-                var cur = _asyncResultReader.ResponseStream.Current;
+                var cur = _asyncResultReader.Current;
 
                 // 1. Progress handling (and maybe output)
                 if (cur.Progress != null)
@@ -128,10 +201,7 @@ public sealed class BulkReader : IDisposable
 
     public void Dispose()
     {
-        if (_asyncResultReader != null)
-        {
-            _asyncResultReader.Dispose();
-            _asyncResultReader = null;
-        }
+        _asyncResultReader?.Dispose();
+        _asyncResultReader = null;
     }
 }

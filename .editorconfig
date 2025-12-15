@@ -1,0 +1,21 @@
+[*.cs]
+
+# IDE0290: Use primary constructor
+csharp_style_prefer_primary_constructors = false
+
+
+# IDE0305: Simplify collection initialization
+dotnet_style_prefer_collection_expression = never
+
+
+# IDE0001: Simplify Names
+dotnet_diagnostic.IDE0001.severity = none
+
+
+# IDE0251: Make member 'readonly'
+csharp_style_prefer_readonly_struct_member = false
+
+
+# IDE0032: Use auto property
+dotnet_style_prefer_auto_properties = false
+

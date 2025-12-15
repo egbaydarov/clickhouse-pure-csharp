@@ -23,6 +23,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <NoWarn>CS1591</NoWarn>
     <IsAotCompatible>true</IsAotCompatible>
+    <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="/" Link="README.md" />

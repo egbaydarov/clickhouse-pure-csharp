@@ -6,17 +6,14 @@ public static class SutFactory
     {
         var username =  Environment.GetEnvironmentVariable("CLICKHOUSE_USER") ?? "default";
         var password =  Environment.GetEnvironmentVariable("CLICKHOUSE_PASSWORD") ?? "default";
-        var router = ClickhouseGrpcConnectionFactory.Create(
-            endpoints: ["http://127.0.0.1:9100"],
-            bootstrapUsername: username,
-            bootstrapPassword: password,
-            useSsl: false,
+        var router = ClickhouseGrpcConnectionFactory.CreateNoSniff(
+            hosts: [ new Uri("http://127.0.0.1:9100")],
             port: 9100,
             poolSize: 1);
 
         var handler = new CompressingCallHandler(
             compression: "gzip",
-            router: router, 
+            router: router,
             password: password,
             queryTimeout: TimeSpan.FromSeconds(300),
             defaultSettings: new Dictionary<string, string> { { "insert_quorum","auto" } },

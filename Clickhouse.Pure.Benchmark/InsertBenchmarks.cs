@@ -101,7 +101,7 @@ public class InsertBenchmarks
     [Benchmark(Description = "Official ClickHouse.Client (BulkCopy)")]
     public async Task OfficialDriver_BulkCopyInsert()
     {
-        var bulkCopy = new ClickHouseBulkCopy(_officialConnection!)
+        var bulkCopy = new ClickHouseBulkCopy(_officialConnection)
         {
             DestinationTableName = _officialDriverTable,
             BatchSize = RowCount,
@@ -253,7 +253,7 @@ public class SingleColumnInsertBenchmarks
     [Benchmark(Description = "Official ClickHouse.Client (BulkCopy)")]
     public async Task OfficialDriver_SingleColumn()
     {
-        var bulkCopy = new ClickHouseBulkCopy(_officialConnection!)
+        var bulkCopy = new ClickHouseBulkCopy(_officialConnection)
         {
             DestinationTableName = _officialDriverTable,
             BatchSize = RowCount,
@@ -573,7 +573,7 @@ internal static class DataFactory
             var category = Categories[i % Categories.Length];
             var secondsOffset = random.NextInt64(-5_000_000, 5_000_000);
             var fractionalTicks = random.NextInt64(0, TimeSpan.TicksPerSecond);
-            var dateTime = baseDate.AddTicks(secondsOffset * TimeSpan.TicksPerSecond + fractionalTicks);
+            var dateTime = baseDate.AddTicks((secondsOffset * TimeSpan.TicksPerSecond) + fractionalTicks);
 
             rows.Add(new BenchmarkRow(
                 name,

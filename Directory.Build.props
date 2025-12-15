@@ -1,5 +1,6 @@
 <Project>
   <PropertyGroup>
+    <Nullable>enable</Nullable>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateFullPaths>true</GenerateFullPaths>

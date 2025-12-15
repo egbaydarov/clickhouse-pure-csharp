@@ -8,5 +8,6 @@ riderModule.iml
 .nuget/
 .dotnet/
 nohup.out
+.nix-rider
 .vscode/
 clickhouse-pure.sln.DotSettings.user

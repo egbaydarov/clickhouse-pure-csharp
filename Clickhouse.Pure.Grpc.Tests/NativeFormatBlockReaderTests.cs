@@ -39,6 +39,53 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task UInt32Column_ReadsNativeBlockWhereClause()
+    {
+        _tableName = $"default.native_read_uint32_{Guid.NewGuid():N}";
+        var values = Enumerable.Range(start: 0, count: 1000).ToList();
+
+        await _sut.CreateSingleColumnTableAsync(tableName: _tableName, clickhouseType: "UInt32");
+        await _sut.InsertCsvAsync(tableName: _tableName, rows: values.Select(selector: v => v.ToString(provider: CultureInfo.InvariantCulture)));
+
+        const int pivot = 499;
+        const int other = 501;
+
+        var sessionId = Guid.NewGuid().ToString();
+        await _sut.QueryRaw(
+           query: $"""
+           SET param_pivot = {pivot};
+           """,
+           sessionId: sessionId);
+        await _sut.QueryRaw(
+           query: $"""
+           SET param_other = {other};
+           """,
+           sessionId: sessionId);
+        var actual = await ReadColumnAsync(
+            query:
+              $$"""
+              SELECT Value FROM {{_tableName}}
+              WHERE Value > {pivot: Int32} and Value < {other: Int32};
+              """,
+            sessionId: sessionId,
+            readBlock: static reader =>
+            {
+                var column = reader.ReadUInt32Column();
+                var result = new List<uint>(capacity: column.Length);
+                while (column.HasMoreRows())
+                {
+                    result.Add(item: column.ReadNext());
+                }
+
+                return result;
+            });
+
+        actual
+            .Should()
+            .BeEquivalentTo([500]);
+    }
+
+    [Fact]
     public async Task NativeFormatBlockReader_ReadsAllSupportedTypesTogether()
     {
         _tableName = $"default.native_read_all_types_{Guid.NewGuid():N}";
@@ -186,7 +233,9 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
 
         await _sut.InsertCsvAsync(_tableName, rows);
 
-        using var reader = await _sut.QueryNativeBulkAsync($"SELECT {columnNames} FROM {_tableName}");
+        using var reader = await _sut.QueryNativeBulkAsync(
+            $"SELECT {columnNames} FROM {_tableName}",
+            sessionId: null);
 
         var actualUInt8 = new List<byte>();
         var actualUInt16 = new List<ushort>();
@@ -1179,9 +1228,13 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
 
     private async Task<List<T>> ReadColumnAsync<T>(
         string query,
-        Func<NativeFormatBlockReader, List<T>> readBlock)
+        Func<NativeFormatBlockReader, List<T>> readBlock,
+        string? sessionId = null)
     {
-        using var reader = await _sut.QueryNativeBulkAsync(query);
+        using var reader = await _sut.QueryNativeBulkAsync(
+            query,
+            sessionId: sessionId);
+
         var values = new List<T>();
 
         while (await reader.Read() is { } block)

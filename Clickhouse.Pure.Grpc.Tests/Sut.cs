@@ -60,6 +60,21 @@ public class Sut
         }
     }
 
+    public async Task<Result?> QueryRaw(
+        string query,
+        string sessionId)
+    {
+        var (res, ex) = await _handler.QueryRawResult(
+            query: query,
+            sessionId: sessionId);
+        if (ex != null)
+        {
+            throw ex;
+        }
+
+        return res;
+    }
+
     public async Task<string?> GetVersionThrowing()
     {
         var (res, ex) = await _handler.QueryRawString("SELECT VERSION()");
@@ -167,14 +182,18 @@ public class Sut
         return values;
     }
 
-    public Task<BulkReader> QueryNativeBulkAsync(string query)
+    public Task<BulkReader> QueryNativeBulkAsync(
+        string query,
+        string? sessionId)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
             throw new ArgumentException("Query must be provided.", nameof(query));
         }
 
-        return _handler.QueryNativeBulk(query);
+        return _handler.QueryNativeBulk(
+            query: query,
+            sessionId: sessionId);
     }
 
     public async Task DropTableAsync(

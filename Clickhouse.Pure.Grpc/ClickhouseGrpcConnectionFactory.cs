@@ -28,9 +28,9 @@ public static class ClickhouseGrpcConnectionFactory
     {
         return new ClickHouseGrpcRouter(
             seedEndpoints: [endpoint],
+            port: port,
             username: bootstrapUsername,
             password: bootstrapPassword,
-            port: port,
             useSsl: useSsl);
     }
 
@@ -46,12 +46,12 @@ public static class ClickhouseGrpcConnectionFactory
     {
         return new ClickHouseGrpcRouter(
             seedEndpoints: endpoints,
+            port: port,
             username: bootstrapUsername,
             password: bootstrapPassword,
-            port: port,
             poolSize: poolSize,
+            useSsl: useSsl,
             connectionTimeout: initialBootstrapConnectionTimeout ?? TimeSpan.FromSeconds(5),
-            channelOptions: options ?? ClickHouseGrpcRouter.ChannelOptions,
-            useSsl: useSsl);
+            channelOptions: options ?? ClickHouseGrpcRouter.ChannelOptions);
     }
 }

@@ -7,8 +7,9 @@ internal static class Program
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    private const string TemplatesDir = "templates";
-    private const string OutDir = "../../../../Clickhouse.Pure.Columns/";
+    private const string WorkingDir = "/home/boogie/stuff/repos/clickhouse-pure-csharp/Clickhouse.Pure.Columns.Templates";
+    private const string TemplatesDir = $"{WorkingDir}/templates";
+    private const string OutDir = $"{WorkingDir}/../Clickhouse.Pure.Columns";
 
     private static int Main()
     {
@@ -292,30 +293,30 @@ internal static class Program
                 new TemplateJob(
                     TemplatePath: $"{TemplatesDir}/NumericColumn.scriban-cs",
                     Model: new { NumericTypes = numerics },
-                    OutputPath: $"{OutDir}NativeFormat.NumericColumns.generated.cs",
+                    OutputPath: $"{OutDir}/NativeFormat.NumericColumns.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.NumericColumns.generated.cs"),
                 new TemplateJob(
                     TemplatePath: $"{TemplatesDir}/DecimalColumn.scriban-cs",
                     Model: new { DecimalTypes = decimals },
-                    OutputPath: $"{OutDir}NativeFormat.DecimalColumns.generated.cs",
+                    OutputPath: $"{OutDir}/NativeFormat.DecimalColumns.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.DecimalColumns.generated.cs"),
 
                 new TemplateJob(
                     TemplatePath: $"{TemplatesDir}/NullableColumn.scriban-cs",
                     Model: new { NullableTypes = nullable },
-                    OutputPath: $"{OutDir}NativeFormat.NullableColumns.generated.cs",
+                    OutputPath: $"{OutDir}/NativeFormat.NullableColumns.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.NullableColumns.generated.cs"),
 
                 new TemplateJob(
                     TemplatePath: $"{TemplatesDir}/LowCardinalityColumn.scriban-cs",
                     Model: new { LowCardinalityTypes = lowCardinality },
-                    OutputPath: $"{OutDir}NativeFormat.LowCardinalityColumn.generated.cs",
+                    OutputPath: $"{OutDir}/NativeFormat.LowCardinalityColumn.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.LowCardinalityColumn.generated.cs"),
 
                 new TemplateJob(
                     TemplatePath: $"{TemplatesDir}/FixedStringColumn.scriban-cs",
                     Model: new { FixedStringTypes = fixedString },
-                    OutputPath: $"{OutDir}NativeFormat.FixedStringColumn.generated.cs",
+                    OutputPath: $"{OutDir}/NativeFormat.FixedStringColumn.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.FixedStringColumn.generated.cs"),
             };
 
