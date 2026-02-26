@@ -1,9 +1,14 @@
 <h1 align="center">ClickHouse Pure C# Client</h1>
 
+
+<div align="center">
+
 Unofficial, simple and efficient driver for Clickhouse.
 Less memory allocations, native data format, column oriented API.
 
-Currently, in the early stage of development.
+**This is still in a prerelease / prototype phase. Changes will be made, things will be broken**
+
+</div>
 
 <br/>
 
