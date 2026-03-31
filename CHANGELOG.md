@@ -1,4 +1,12 @@
 ## Changelog
+<a name="2.3.2"></a>
+## [2.3.2](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.1...v2.3.2) (2026-03-31)
+
+### Not Important
+
+* Clarify prerelease status in README ([eaf44f5](https://github.com/egbaydarov/clichouse-pure-csharp/commit/eaf44f566dd402d0f0d4ef8aafcfb6c1f2c0d69f))
+* more types ([4a2ac9d](https://github.com/egbaydarov/clichouse-pure-csharp/commit/4a2ac9db7c6198710391abe2da0f226427deddc7))
+
 <a name="2.3.1"></a>
 ## [2.3.1](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.0...v2.3.1) (2025-12-15)
 
