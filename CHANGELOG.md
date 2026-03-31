@@ -1,4 +1,11 @@
 ## Changelog
+<a name="2.3.6"></a>
+## [2.3.6](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.5...v2.3.6) (2026-03-31)
+
+### Not Important
+
+* up sciban ([da3ed1e](https://github.com/egbaydarov/clichouse-pure-csharp/commit/da3ed1e63bdbd72c0ab57d4b5e8f60689514e116))
+
 <a name="2.3.5"></a>
 ## [2.3.5](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.4...v2.3.5) (2026-03-31)
 
