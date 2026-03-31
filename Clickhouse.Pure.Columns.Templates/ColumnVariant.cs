@@ -41,9 +41,26 @@ public record class NullableColumnVariant(
 
 public record class LowCardinalityColumnVariant(
     string? CsharpType,
-    string? ClickhouseType)
+    string? ClickhouseType,
+    bool IsNullable,
+    string? Suffix)
 {
-    public LowCardinalityColumnVariant() : this("", "")
+    public LowCardinalityColumnVariant() : this("", "", false, "")
+    {
+    }
+}
+
+public record class ArrayNullableColumnVariant(
+    string ClickhouseType,
+    string InnerCsharpType,
+    string Suffix,
+    bool IsVariableLength,
+    int ValueSizeInBytes,
+    string? SpanReadFunction,
+    string DefaultNullValue,
+    string? WriteStatement)
+{
+    public ArrayNullableColumnVariant() : this("", "", "", false, 0, null, "", null)
     {
     }
 }

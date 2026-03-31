@@ -12,7 +12,6 @@
 
       pkgs = import nixpkgs {
         inherit system overlays;
-        config.allowUnfree = true;
       };
 
       combinedDotnet = pkgs.dotnetCorePackages.combinePackages (with pkgs.dotnetCorePackages; [
@@ -57,21 +56,8 @@
         }
       '';
 
-      riderBase = pkgs.jetbrains.rider.override {
-        vmopts = ''
-          -Xms4096m
-          -Xmx10G
-          -Dawt.toolkit.name=WLToolkit
-        '';
-      };
-
-      riderWithPlugins = pkgs.jetbrains.plugins.addPlugins riderBase [
-        "ideavim"
-      ];
-
-      # Single FHS env for *both* Rider and dev shell
       dotnetFhs = pkgs.buildFHSEnv {
-        name = "dotnet-rider-env";
+        name = "dotnet-env";
         targetPkgs = pkgs: with pkgs; [
           bash
           coreutils
@@ -98,34 +84,7 @@
         '';
       };
 
-      riderLauncher = pkgs.writeShellApplication {
-        name = "rider";
-        runtimeInputs = [ riderWithPlugins dotnetFhs pkgs.coreutils ];
-        text = ''
-          set -euo pipefail
-          ${workspaceDetection}
-          WORKSPACE_DIR=$(resolve_workspace_dir)
-          export WORKSPACE_DIR
-          log_dir="$PWD/.nix-rider"
-          mkdir -p "$log_dir"
-          log_file="$log_dir/rider.log"
-          nohup ${dotnetFhs}/bin/dotnet-rider-env ${riderWithPlugins}/bin/rider "$@" >"$log_file" 2>&1 &
-          pid=$!
-          disown "$pid"
-          echo "Rider started in background (PID $pid). Logs: $log_file"
-        '';
-      };
     in {
-      packages.${system} = {
-        default = riderLauncher;
-        rider = riderLauncher;
-      };
-
-      apps.${system}.default = {
-        type = "app";
-        program = "${riderLauncher}/bin/rider";
-      };
-
       devShells.${system}.default = dotnetFhs.env;
     };
 }

@@ -1226,6 +1226,242 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
             .Equal(values);
     }
 
+    [Fact]
+    public async Task NullableUInt16Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_nullable_uint16_{Guid.NewGuid():N}";
+        var values = new ushort?[] { null, 0, 1, ushort.MaxValue, null };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(UInt16)");
+        await _sut.InsertCsvAsync(_tableName, values.Select(FormatCsvNullableNumeric));
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadNullableUInt16Column();
+            var result = new List<ushort?>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableUInt32Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_nullable_uint32_{Guid.NewGuid():N}";
+        var values = new uint?[] { null, 0u, 42u, uint.MaxValue, null };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(UInt32)");
+        await _sut.InsertCsvAsync(_tableName, values.Select(FormatCsvNullableNumeric));
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadNullableUInt32Column();
+            var result = new List<uint?>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableUInt64Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_nullable_uint64_{Guid.NewGuid():N}";
+        var values = new ulong?[] { null, 0UL, 42UL, ulong.MaxValue, null };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(UInt64)");
+        await _sut.InsertCsvAsync(_tableName, values.Select(FormatCsvNullableNumeric));
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadNullableUInt64Column();
+            var result = new List<ulong?>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableBoolColumn_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_nullable_bool_{Guid.NewGuid():N}";
+        var values = new bool?[] { null, true, false, null, true };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(Bool)");
+        await _sut.InsertCsvAsync(_tableName, values.Select(FormatCsvNullableBool));
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadNullableBoolColumn();
+            var result = new List<bool?>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableDateTime64Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_nullable_dt64_{Guid.NewGuid():N}";
+        var values = new DateTimeOffset?[]
+        {
+            null,
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            null,
+            new DateTimeOffset(2025, 6, 15, 12, 30, 45, TimeSpan.Zero),
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(DateTime64(3))");
+        await _sut.InsertCsvAsync(_tableName, values.Select(v => FormatCsvNullableDateTime(v, 3)));
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadNullableDateTime64Column(3, string.Empty);
+            var result = new List<DateTimeOffset?>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Select(v => v.HasValue ? ToUnixTimeNanoseconds(v.Value) : (long?)null).ToArray()
+            .Should()
+            .Equal(values.Select(v => v.HasValue ? ToUnixTimeNanoseconds(v.Value) : (long?)null).ToArray());
+    }
+
+    [Fact]
+    public async Task NullableDecimal128Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_nullable_dec128_{Guid.NewGuid():N}";
+        const int scale = 18;
+        var valueStrings = new[]
+        {
+            "\\N",
+            "12345678901234567890.123456789012345678",
+            "\\N",
+            "-98765432109876543210.987654321098765432",
+        };
+        var expected = new Decimal128Value?[]
+        {
+            null,
+            CreateDecimal128Value("12345678901234567890.123456789012345678", scale),
+            null,
+            CreateDecimal128Value("-98765432109876543210.987654321098765432", scale),
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, $"Nullable(Decimal(38, {scale}))");
+        await _sut.InsertCsvAsync(_tableName, valueStrings);
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadNullableDecimal128Column();
+            var result = new List<Decimal128Value?>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().Equal(expected);
+    }
+
+    [Fact]
+    public async Task ArrayNullableStringColumn_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_arr_nullable_str_{Guid.NewGuid():N}";
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(Nullable(String))");
+        await _sut.InsertCsvAsync(_tableName, new[]
+        {
+            "\"['hello',NULL,'world']\"",
+            "\"[]\"",
+            "\"[NULL,NULL]\"",
+            "\"['only']\"",
+        });
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadArrayNullableStringColumn();
+            var result = new List<string?[]>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().HaveCount(4);
+        actual[0].Should().Equal("hello", null, "world");
+        actual[1].Should().BeEmpty();
+        actual[2].Should().Equal(null, null);
+        actual[3].Should().Equal("only");
+    }
+
+    [Fact]
+    public async Task ArrayNullableUInt32Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_arr_nullable_uint32_{Guid.NewGuid():N}";
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(Nullable(UInt32))");
+        await _sut.InsertCsvAsync(_tableName, new[]
+        {
+            "\"[1,NULL,3]\"",
+            "\"[]\"",
+            "\"[NULL,42]\"",
+        });
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadArrayNullableUInt32Column();
+            var result = new List<uint?[]>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().HaveCount(3);
+        actual[0].Should().Equal(1u, null, 3u);
+        actual[1].Should().BeEmpty();
+        actual[2].Should().Equal(null, 42u);
+    }
+
+    [Fact]
+    public async Task LowCardinalityNullableStringColumn_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_lowcard_nullable_{Guid.NewGuid():N}";
+        var values = new string?[] { "alpha", null, "beta", null, "alpha" };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "LowCardinality(Nullable(String))");
+        await _sut.InsertCsvAsync(_tableName, values.Select(FormatCsvNullableString));
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadLowCardinalityNullableStringColumn();
+            var result = new List<string?>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().Equal(values);
+    }
+
+    private static string FormatCsvNullableNumeric<T>(T? value)
+        where T : struct, IFormattable
+    {
+        return value.HasValue ? value.Value.ToString(null, CultureInfo.InvariantCulture) : "\\N";
+    }
+
+    private static string FormatCsvNullableBool(bool? value)
+    {
+        return value.HasValue ? (value.Value ? "true" : "false") : "\\N";
+    }
+
+    private static string FormatCsvNullableDateTime(DateTimeOffset? value, int scale)
+    {
+        if (!value.HasValue) return "\\N";
+        var format = GetDateTimeFormat(scale);
+        return value.Value.ToUniversalTime().ToString(format, CultureInfo.InvariantCulture);
+    }
+
     private async Task<List<T>> ReadColumnAsync<T>(
         string query,
         Func<NativeFormatBlockReader, List<T>> readBlock,

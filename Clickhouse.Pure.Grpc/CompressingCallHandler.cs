@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Dynamic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,6 +17,8 @@ public sealed class CompressingCallHandler : IDisposable
 
     private readonly TimeSpan? _queryTimeout;
     private readonly MapField<string, string> _defaultSettings;
+
+    private static readonly ActivitySource diagnosticSource = new("ClickhousePureCsharp");
 
     public CompressingCallHandler(
         ClickHouseGrpcRouter router,
@@ -126,9 +128,13 @@ public sealed class CompressingCallHandler : IDisposable
         string? database = null,
         Dictionary<string,string>? settings = null)
     {
+        //TODO: avoid capturing
         var call = _router.Call<Result>(
             handler: (client, ct) =>
             {
+                using var activity = diagnosticSource.CreateActivity(nameof(QueryRawString), ActivityKind.Client);
+                activity?.Start();
+
                 var querySettings = _defaultSettings.Clone();
                 if (settings != null)
                 {
@@ -145,9 +151,17 @@ public sealed class CompressingCallHandler : IDisposable
                     Settings = { querySettings },
                 };
 
+                var metadata = new Metadata();
+                var traceId = activity?.Parent?.TraceId.ToHexString();
+                if (!string.IsNullOrEmpty(traceId))
+                {
+                    metadata.Add("traceparent", traceId);
+                }
+
                 var result = client
                     .ExecuteQuery(
                         request: queryInfo,
+                        headers: metadata,
                         deadline: GetQueryDeadline(),
                         cancellationToken: ct);
 

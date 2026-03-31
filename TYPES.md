@@ -4,12 +4,14 @@
 * `String` → `string`
 * `FixedString(N)` → `string` (trims trailing zero bytes)
 * `LowCardinality(String)` → `string`
+* `LowCardinality(Nullable(String))` → `string?`
 * `Nullable(String)` → `string?`
 
 ## Date and Time Encodings
 * `Date` → `DateOnly` (days since 1970-01-01)
 * `Date32` → `DateOnly` (days since 1900-01-01)
 * `DateTime64(scale, timezone)` → `DateTimeOffset`
+* `Nullable(DateTime64(scale, timezone))` → `DateTimeOffset?`
 
 ## Integer Encodings
 * `Bool` → `bool`
@@ -25,6 +27,12 @@
 * `UInt128` → `UInt128`
 * `IPv4` → `System.Net.IPAddress`
 
+## Nullable Integer Encodings
+* `Nullable(Bool)` → `bool?`
+* `Nullable(UInt16)` → `ushort?`
+* `Nullable(UInt32)` → `uint?`
+* `Nullable(UInt64)` → `ulong?`
+
 ## Floating-Point Encodings
 * `Float32` → `float`
 * `Float64` → `double`
@@ -34,5 +42,9 @@
 * `Decimal64(S)` → `decimal`
 * `Decimal128(S)` → `Decimal128Value`
 * `Decimal256(S)` → `Decimal256Value`
+* `Nullable(Decimal128(S))` → `Decimal128Value?`
 * `Decimal(P, S)` → one of the above depending on precision `P` ([ClickHouse Decimal docs](https://clickhouse.com/docs/sql-reference/data-types/decimal))
 
+## Array Encodings
+* `Array(Nullable(String))` → `string?[]`
+* `Array(Nullable(UInt32))` → `uint?[]`

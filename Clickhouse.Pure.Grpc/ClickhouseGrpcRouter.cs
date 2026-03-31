@@ -226,12 +226,12 @@ public sealed class ClickHouseGrpcRouter : IDisposable
                 _endpoints = discovered;
                 _channels = _endpoints
                     .ToFrozenDictionary(
+                        keySelector: endpoint => endpoint,
                         elementSelector: endpoint => new RoundRobinChannelPool(
                             size: poolSize,
                             factory: () => GrpcChannel.ForAddress(
                                 address: endpoint,
-                                channelOptions: _channelOptions)),
-                        keySelector: endpoint => endpoint);
+                                channelOptions: _channelOptions)));
                 _primary = Random.Shared.Next(_endpoints.Count);
             }
         }
@@ -255,12 +255,12 @@ public sealed class ClickHouseGrpcRouter : IDisposable
                 _seedEndpoints = endpoints;
                 _channels = _endpoints
                     .ToFrozenDictionary(
+                        keySelector: endpoint => endpoint,
                         elementSelector: endpoint => new RoundRobinChannelPool(
                             size: poolSize,
                             factory: () => GrpcChannel.ForAddress(
                                 address: endpoint,
-                                channelOptions: _channelOptions)),
-                        keySelector: endpoint => endpoint);
+                                channelOptions: _channelOptions)));
                 _primary = Random.Shared.Next(_endpoints.Count);
             }
         }

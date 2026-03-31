@@ -53,20 +53,12 @@ public partial class NativeFormatBlockReader
         public static LowCardinalityStringColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset,
             int rows)
         {
-            // Format per ClickHouse Native (see ch-go proto ColLowCardinality):
-            // meta:int64 (LE) with flags and key type
-            // indexRows:int64 (LE)
-            // index values: String[indexRows]
-            // keyRows:int64 (LE)
-            // keys: UInt{8|16|32|64}[keyRows]
-
             var local = offset;
 
             var first64 = ReadInt64Le(ref local, data);
             var meta = first64 == 1 ? ReadInt64Le(ref local, data) : first64;
 
-            // Bits
-            const long cardinalityKeyMask = 0xFF; // last byte
+            const long cardinalityKeyMask = 0xFF;
             const long cardinalityNeedGlobalDictionaryBit = 1L << 8;
             const long cardinalityHasAdditionalKeysBit = 1L << 9;
 
@@ -100,7 +92,7 @@ public partial class NativeFormatBlockReader
             {
                 var len = (int)ReadUVarInt(ref local, data);
                 if (local + len > data.Length) throw new IndexOutOfRangeException("lowcard dict value out of range");
-                dict[i] = Encoding.UTF8.GetString(data.Slice(local, len));
+                dict[i] = len == 0 ? string.Empty : Encoding.UTF8.GetString(data.Slice(local, len));
                 local += len;
             }
 
@@ -110,7 +102,6 @@ public partial class NativeFormatBlockReader
 
             if (keyRows != rows)
             {
-                // In practice should be equal; if not, keep using reported key rows
                 throw new IndexOutOfRangeException("lowcard dict value out of range");
             }
 
@@ -151,6 +142,140 @@ public partial class NativeFormatBlockReader
             if ((uint)key >= (uint)_dictionary.Length)
                 throw new IndexOutOfRangeException("lowcard key out of dict bounds");
             return _dictionary[key];
+        }
+    }
+    public LowCardinalityNullableStringColumnReader ReadLowCardinalityNullableStringColumn()
+    {
+        if (_columnsRead >= _columnsCount)
+        {
+            throw new InvalidOperationException("No more columns available in this block.");
+        }
+
+        var name = ReadHeaderString();
+        var type = ReadHeaderString();
+        _columnsRead++;
+
+        if (!MatchesType(type, "LowCardinality(Nullable(String))"u8))
+        {
+            throw new InvalidOperationException(
+                $"Column type mismatch. Expected LowCardinality(Nullable(String)) for column '{Encoding.UTF8.GetString(name)}', but got '{Encoding.UTF8.GetString(type)}'.");
+        }
+
+        return LowCardinalityNullableStringColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
+    }
+
+    public ref struct LowCardinalityNullableStringColumnReader : ISequentialColumnReader<string?>
+    {
+        private readonly string[] _dictionary;
+        private readonly int _rows;
+        private readonly int _keyWidthBytes; // 1, 2, 4, or 8
+        private readonly ReadOnlySpan<byte> _keysData;
+        private int _index;
+        private readonly bool _isNullable;
+
+        private LowCardinalityNullableStringColumnReader(string[] dictionary, ReadOnlySpan<byte> keysData, int rows,
+            int keyWidthBytes, bool isNullable)
+        {
+            _dictionary = dictionary;
+            _rows = rows;
+            _keysData = keysData;
+            _keyWidthBytes = keyWidthBytes;
+            _index = 0;
+            _isNullable = isNullable;
+        }
+
+        public static LowCardinalityNullableStringColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset,
+            int rows)
+        {
+            var local = offset;
+
+            var first64 = ReadInt64Le(ref local, data);
+            var meta = first64 == 1 ? ReadInt64Le(ref local, data) : first64;
+
+            const long cardinalityKeyMask = 0xFF;
+            const long cardinalityNeedGlobalDictionaryBit = 1L << 8;
+            const long cardinalityHasAdditionalKeysBit = 1L << 9;
+
+            if ((meta & cardinalityNeedGlobalDictionaryBit) != 0)
+            {
+                throw new NotSupportedException("LowCardinality global dictionary is not supported");
+            }
+
+            if ((meta & cardinalityHasAdditionalKeysBit) == 0)
+            {
+                // Continue best-effort; some versions skip flag.
+            }
+
+            var keyType = (int)(meta & cardinalityKeyMask); // 0=UInt8,1=UInt16,2=UInt32,3=UInt64
+            var width = keyType switch
+            {
+                0 => 1,
+                1 => 2,
+                2 => 4,
+                3 => 8,
+                _ => throw new InvalidOperationException($"Invalid LowCardinality key type {keyType}")
+            };
+
+            var indexRows64 = ReadInt64Le(ref local, data);
+            if (indexRows64 < 0 || indexRows64 > int.MaxValue)
+                throw new OverflowException("dictionary size out of range");
+            var dictSize = (int)indexRows64;
+
+            var dict = new string[dictSize];
+            for (var i = 0; i < dictSize; i++)
+            {
+                var len = (int)ReadUVarInt(ref local, data);
+                if (local + len > data.Length) throw new IndexOutOfRangeException("lowcard dict value out of range");
+                dict[i] = len == 0 ? string.Empty : Encoding.UTF8.GetString(data.Slice(local, len));
+                local += len;
+            }
+
+            var keyRows64 = ReadInt64Le(ref local, data);
+            if (keyRows64 < 0 || keyRows64 > int.MaxValue) throw new OverflowException("keys size out of range");
+            var keyRows = (int)keyRows64;
+
+            if (keyRows != rows)
+            {
+                throw new IndexOutOfRangeException("lowcard dict value out of range");
+            }
+
+            var keysBytesTotal = checked(rows * width);
+            if (local + keysBytesTotal > data.Length) throw new IndexOutOfRangeException("lowcard keys out of range");
+            var keysData = data.Slice(local, keysBytesTotal);
+            local += keysBytesTotal;
+
+            offset = local;
+            return new LowCardinalityNullableStringColumnReader(dict, keysData, rows, width, isNullable: true);
+        }
+
+        public int Length => _rows;
+
+        public bool HasMoreRows() => _index < _rows;
+
+        public string? ReadNext()
+        {
+            if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
+            int key;
+            var pos = _index * _keyWidthBytes;
+            switch (_keyWidthBytes)
+            {
+                case 1: key = _keysData[pos]; break;
+                case 2: key = BinaryPrimitives.ReadUInt16LittleEndian(_keysData.Slice(pos, 2)); break;
+                case 4: key = (int)BinaryPrimitives.ReadUInt32LittleEndian(_keysData.Slice(pos, 4)); break;
+                case 8:
+                    {
+                        var v = BinaryPrimitives.ReadUInt64LittleEndian(_keysData.Slice(pos, 8));
+                        if (v > int.MaxValue) throw new OverflowException("lowcard key does not fit into int");
+                        key = (int)v;
+                        break;
+                    }
+                default: throw new InvalidOperationException("invalid key width");
+            }
+
+            _index++;
+            if ((uint)key >= (uint)_dictionary.Length)
+                throw new IndexOutOfRangeException("lowcard key out of dict bounds");
+            return key == 0 ? null : _dictionary[key];
         }
     }
 }
@@ -244,6 +369,218 @@ public partial class NativeFormatBlockWriter
                 dataLength: 0);
 
             return new LowCardinalityStringColumnWriter(
+                blockIndex: blockIndex,
+                writer: writer,
+                rows: rows,
+                buffer: buffer);
+        }
+
+        private void EncodeIfNecessary()
+        {
+            if (_encoded)
+            {
+                return;
+            }
+
+            if (_index != _rows)
+            {
+                throw new InvalidOperationException("Cannot encode LowCardinality column before all rows are written.");
+            }
+
+            const long CardinalityKeyVersion = 1;
+            const long CardinalityUpdateAll = (1L << 9) | (1L << 10);
+
+            var dictionaryCount = (long)_dictionary.Count;
+            var keyWidth = dictionaryCount switch
+            {
+                <= 256 => 1,
+                <= 65_536 => 2,
+                <= 0x1_0000_0000 => 4,
+                _ => 8
+            };
+
+            var keyFlag = keyWidth switch
+            {
+                1 => 0L,
+                2 => 1L,
+                4 => 2L,
+                8 => 3L,
+                _ => throw new InvalidOperationException("Unsupported key width for low cardinality column.")
+            };
+
+            _buffer = _writer.EnsureCapacity(
+                index: _blockIndex,
+                offset: _offset,
+                required: _offset + 24);
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), CardinalityKeyVersion);
+            _offset += 8;
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), CardinalityUpdateAll | keyFlag);
+            _offset += 8;
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), dictionaryCount);
+            _offset += 8;
+
+            foreach (var entry in _dictionary)
+            {
+                _buffer = _writer.EnsureCapacity(
+                    index: _blockIndex,
+                    offset: _offset,
+                    required: _offset + NativeFormatBlockWriter.MaxVarintLen64 + Encoding.UTF8.GetByteCount(entry));
+                _offset += NativeFormatBlockWriter.WriteUtf8StringValue(_buffer.AsSpan(_offset), entry);
+            }
+
+            _buffer = _writer.EnsureCapacity(
+                index: _blockIndex,
+                offset: _offset,
+                required: _offset + 8);
+            NativeFormatBlockWriter.WriteInt64Le(_buffer.AsSpan(_offset, 8), _rows);
+            _offset += 8;
+
+            var keyBytes = _rows * keyWidth;
+            _buffer = _writer.EnsureCapacity(
+                index: _blockIndex,
+                offset: _offset,
+                required: _offset + keyBytes);
+            var keysSpan = _buffer.AsSpan(_offset, keyBytes);
+
+            switch (keyWidth)
+            {
+                case 1:
+                {
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        keysSpan[i] = (byte)_keys[i];
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        BinaryPrimitives.WriteUInt16LittleEndian(keysSpan.Slice(i * 2, 2), (ushort)_keys[i]);
+                    }
+                    break;
+                }
+                case 4:
+                {
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        BinaryPrimitives.WriteUInt32LittleEndian(keysSpan.Slice(i * 4, 4), (uint)_keys[i]);
+                    }
+                    break;
+                }
+                case 8:
+                {
+                    for (var i = 0; i < _rows; i++)
+                    {
+                        BinaryPrimitives.WriteUInt64LittleEndian(keysSpan.Slice(i * 8, 8), (ulong)_keys[i]);
+                    }
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("Unsupported key width for low cardinality column.");
+            }
+
+            _offset += keyBytes;
+            _encoded = true;
+            _writer.SetDataLength(_blockIndex, _offset);
+        }
+    }
+    public LowCardinalityNullableStringColumnWriter CreateLowCardinalityNullableStringColumnWriter(string columnName)
+    {
+        return LowCardinalityNullableStringColumnWriter.Create(
+            writer: this,
+            columnName: columnName,
+            rows: checked((int)_rowsCount));
+    }
+
+    public ref struct LowCardinalityNullableStringColumnWriter : ISequentialColumnWriter<string?, LowCardinalityNullableStringColumnWriter>
+    {
+        private NativeFormatBlockWriter _writer;
+        private readonly int _rows;
+        private readonly Dictionary<string, int> _lookup;
+        private readonly List<string> _dictionary;
+        private readonly int[] _keys;
+        private byte[] _buffer;
+        private int _offset;
+        private int _index;
+        private readonly ulong _blockIndex;
+        private bool _encoded;
+
+        private LowCardinalityNullableStringColumnWriter(
+            ulong blockIndex,
+            NativeFormatBlockWriter writer,
+            int rows,
+            byte[] buffer)
+        {
+            _blockIndex = blockIndex;
+            _writer = writer;
+            _rows = rows;
+            _lookup = new Dictionary<string, int>(StringComparer.Ordinal);
+            _dictionary = new List<string>();
+            _keys = new int[rows];
+            _buffer = buffer;
+            _offset = 0;
+            _index = 0;
+            _encoded = false;
+            _dictionary.Add(string.Empty); // index 0 is reserved for null
+        }
+
+        public LowCardinalityNullableStringColumnWriter WriteNext(string? value)
+        {
+            if (_index >= _rows)
+            {
+                throw new InvalidOperationException("No more rows to write.");
+            }
+
+            if (value is null)
+            {
+                _keys[_index] = 0;
+            }
+            else
+            {
+                if (!_lookup.TryGetValue(value, out var key))
+                {
+                    key = _dictionary.Count;
+                    _dictionary.Add(value);
+                    _lookup[value] = key;
+                }
+                _keys[_index] = key;
+            }
+
+            _index++;
+
+            if (_index == _rows)
+            {
+                EncodeIfNecessary();
+            }
+
+            return this;
+        }
+
+        public NativeFormatBlockWriter WriteAll(IEnumerable<string?> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var value in values)
+            {
+                WriteNext(value);
+            }
+
+            return _writer;
+        }
+
+        internal static LowCardinalityNullableStringColumnWriter Create(
+            NativeFormatBlockWriter writer,
+            string columnName,
+            int rows)
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(Math.Max(1024, rows * 8));
+            var blockIndex = writer.WriteColumnHeader(
+                buffer: buffer,
+                columnName: columnName,
+                typeName: "LowCardinality(Nullable(String))",
+                dataLength: 0);
+
+            return new LowCardinalityNullableStringColumnWriter(
                 blockIndex: blockIndex,
                 writer: writer,
                 rows: rows,

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Scriban;
 
 namespace Clickhouse.Pure.ColumnCodeGenerator;
@@ -268,13 +268,84 @@ internal static class Program
                 }
             };
 
+            var nullableNumerics = new[]
+            {
+                new NumericColumnVariant
+                {
+                    ClickhouseType = "UInt16",
+                    CsharpType = "ushort",
+                    ValueSizeInBytes = 2,
+                    SpanInterpretFunction = "BinaryPrimitives.ReadUInt16LittleEndian",
+                    WriterValueStatements = new[] { "BinaryPrimitives.WriteUInt16LittleEndian(dest, value.Value);" }
+                },
+                new NumericColumnVariant
+                {
+                    ClickhouseType = "UInt32",
+                    CsharpType = "uint",
+                    ValueSizeInBytes = 4,
+                    SpanInterpretFunction = "BinaryPrimitives.ReadUInt32LittleEndian",
+                    WriterValueStatements = new[] { "BinaryPrimitives.WriteUInt32LittleEndian(dest, value.Value);" }
+                },
+                new NumericColumnVariant
+                {
+                    ClickhouseType = "UInt64",
+                    CsharpType = "ulong",
+                    ValueSizeInBytes = 8,
+                    SpanInterpretFunction = "BinaryPrimitives.ReadUInt64LittleEndian",
+                    WriterValueStatements = new[] { "BinaryPrimitives.WriteUInt64LittleEndian(dest, value.Value);" }
+                },
+                new NumericColumnVariant
+                {
+                    ClickhouseType = "Bool",
+                    CsharpType = "bool",
+                    ValueSizeInBytes = 1,
+                    SpanInterpretFunction = "MemoryMarshal.Read<bool>",
+                    WriterValueStatements = new[] { "dest[0] = value.Value ? (byte)1 : (byte)0;" }
+                },
+            };
+
+            var arrayNullable = new[]
+            {
+                new ArrayNullableColumnVariant
+                {
+                    ClickhouseType = "Array(Nullable(String))",
+                    InnerCsharpType = "string?",
+                    Suffix = "NullableString",
+                    IsVariableLength = true,
+                    ValueSizeInBytes = 0,
+                    SpanReadFunction = null,
+                    DefaultNullValue = "string.Empty",
+                    WriteStatement = null,
+                },
+                new ArrayNullableColumnVariant
+                {
+                    ClickhouseType = "Array(Nullable(UInt32))",
+                    InnerCsharpType = "uint?",
+                    Suffix = "NullableUInt32",
+                    IsVariableLength = false,
+                    ValueSizeInBytes = 4,
+                    SpanReadFunction = "BinaryPrimitives.ReadUInt32LittleEndian",
+                    DefaultNullValue = "0u",
+                    WriteStatement = "BinaryPrimitives.WriteUInt32LittleEndian(dest, allValues[i] ?? 0u);",
+                },
+            };
+
             var lowCardinality = new[]
             {
                 new LowCardinalityColumnVariant
                 {
                     ClickhouseType = "LowCardinality(String)",
                     CsharpType     = "string",
-                }
+                    IsNullable     = false,
+                    Suffix         = "String",
+                },
+                new LowCardinalityColumnVariant
+                {
+                    ClickhouseType = "LowCardinality(Nullable(String))",
+                    CsharpType     = "string?",
+                    IsNullable     = true,
+                    Suffix         = "NullableString",
+                },
             };
 
             var fixedString = new[]
@@ -318,6 +389,18 @@ internal static class Program
                     Model: new { FixedStringTypes = fixedString },
                     OutputPath: $"{OutDir}/NativeFormat.FixedStringColumn.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.FixedStringColumn.generated.cs"),
+
+                new TemplateJob(
+                    TemplatePath: $"{TemplatesDir}/NullableNumericColumn.scriban-cs",
+                    Model: new { NullableNumericTypes = nullableNumerics },
+                    OutputPath: $"{OutDir}/NativeFormat.NullableNumericColumns.generated.cs",
+                    SuccessMessage: "Wrote NativeFormat.NullableNumericColumns.generated.cs"),
+
+                new TemplateJob(
+                    TemplatePath: $"{TemplatesDir}/ArrayNullableColumn.scriban-cs",
+                    Model: new { ArrayNullableTypes = arrayNullable },
+                    OutputPath: $"{OutDir}/NativeFormat.ArrayColumns.generated.cs",
+                    SuccessMessage: "Wrote NativeFormat.ArrayColumns.generated.cs"),
             };
 
             foreach (var job in jobs)

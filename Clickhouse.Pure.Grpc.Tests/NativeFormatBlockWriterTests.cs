@@ -1176,6 +1176,211 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
             .Equal(fixedStringValues);
     }
 
+    [Fact]
+    public async Task NullableUInt16Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_nullable_uint16_{Guid.NewGuid():N}";
+        var values = new ushort?[] { null, 0, 1, ushort.MaxValue, null };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(UInt16)");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        writer.CreateNullableUInt16ColumnWriter("Value").WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName,
+            s => s == "\\N" ? (ushort?)null : ushort.Parse(s, CultureInfo.InvariantCulture));
+
+        fetched.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableUInt32Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_nullable_uint32_{Guid.NewGuid():N}";
+        var values = new uint?[] { null, 0u, 42u, uint.MaxValue, null };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(UInt32)");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        writer.CreateNullableUInt32ColumnWriter("Value").WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName,
+            s => s == "\\N" ? (uint?)null : uint.Parse(s, CultureInfo.InvariantCulture));
+
+        fetched.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableUInt64Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_nullable_uint64_{Guid.NewGuid():N}";
+        var values = new ulong?[] { null, 0UL, 42UL, ulong.MaxValue, null };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(UInt64)");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        writer.CreateNullableUInt64ColumnWriter("Value").WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName,
+            s => s == "\\N" ? (ulong?)null : ulong.Parse(s, CultureInfo.InvariantCulture));
+
+        fetched.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableBoolColumn_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_nullable_bool_{Guid.NewGuid():N}";
+        var values = new bool?[] { null, true, false, null, true };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(Bool)");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        writer.CreateNullableBoolColumnWriter("Value").WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName,
+            s => s == "\\N" ? (bool?)null : bool.Parse(s));
+
+        fetched.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task NullableDateTime64Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_nullable_dt64_{Guid.NewGuid():N}";
+        var values = new DateTimeOffset?[]
+        {
+            null,
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            null,
+            new DateTimeOffset(2025, 6, 15, 12, 30, 45, TimeSpan.Zero),
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Nullable(DateTime64(3))");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        writer.CreateNullableDateTime64ColumnWriter("Value", 3, string.Empty).WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var expected = values.Select(v => v.HasValue ? ToUnixTimeNanoseconds(v.Value) : (long?)null).ToArray();
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName,
+            "toUnixTimestamp64Nano(Value)",
+            s => s == "\\N" ? (long?)null : long.Parse(s, CultureInfo.InvariantCulture));
+
+        fetched.Should().Equal(expected);
+    }
+
+    [Fact]
+    public async Task NullableDecimal128Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_nullable_dec128_{Guid.NewGuid():N}";
+        const int scale = 18;
+        var values = new Decimal128Value?[]
+        {
+            null,
+            CreateDecimal128Value("12345678901234567890.123456789012345678", scale),
+            null,
+            CreateDecimal128Value("-98765432109876543210.987654321098765432", scale),
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, $"Nullable(Decimal(38, {scale}))");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        writer.CreateNullableDecimal128ColumnWriter("Value", scale, 38).WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName,
+            s => s == "\\N" ? (Decimal128Value?)null : CreateDecimal128Value(s, scale));
+
+        fetched.Should().Equal(values);
+    }
+
+    [Fact]
+    public async Task ArrayNullableStringColumn_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_arr_nullable_str_{Guid.NewGuid():N}";
+        var values = new[]
+        {
+            new string?[] { "hello", null, "world" },
+            Array.Empty<string?>(),
+            new string?[] { null, null },
+            new string?[] { "only" },
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(Nullable(String))");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        var col = writer.CreateArrayNullableStringColumnWriter("Value");
+        foreach (var v in values) col.WriteNext(v);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName, static s => s);
+
+        fetched.Should().HaveCount(4);
+        fetched[0].Should().Contain("hello").And.Contain("NULL").And.Contain("world");
+        fetched[1].Should().Be("[]");
+        fetched[2].Should().Contain("NULL");
+        fetched[3].Should().Contain("only");
+    }
+
+    [Fact]
+    public async Task ArrayNullableUInt32Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_arr_nullable_uint32_{Guid.NewGuid():N}";
+        var values = new[]
+        {
+            new uint?[] { 1u, null, 3u },
+            Array.Empty<uint?>(),
+            new uint?[] { null, 42u },
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(Nullable(UInt32))");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        var col = writer.CreateArrayNullableUInt32ColumnWriter("Value");
+        foreach (var v in values) col.WriteNext(v);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName, static s => s);
+
+        fetched.Should().HaveCount(3);
+        fetched[0].Should().Be("[1,NULL,3]");
+        fetched[1].Should().Be("[]");
+        fetched[2].Should().Be("[NULL,42]");
+    }
+
+    [Fact]
+    public async Task LowCardinalityNullableStringColumn_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_lowcard_nullable_{Guid.NewGuid():N}";
+        var values = new string?[] { "alpha", null, "beta", null, "alpha" };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "LowCardinality(Nullable(String))");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        writer.CreateLowCardinalityNullableStringColumnWriter("Value").WriteAll(values);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName,
+            s => s == "\\N" ? null : s);
+
+        fetched.Should().Equal(values);
+    }
+
     private static Decimal128Value CreateDecimal128Value(string text, int scale)
     {
         var (rawValue, fractionDigits) = ParseDecimalComponents(text);

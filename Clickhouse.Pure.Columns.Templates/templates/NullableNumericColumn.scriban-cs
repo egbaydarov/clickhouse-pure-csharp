@@ -1,0 +1,151 @@
+#nullable enable
+using System;
+using System.Buffers;
+using System.Buffers.Binary;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Collections.Generic;
+
+namespace Clickhouse.Pure.Columns;
+
+public partial class NativeFormatBlockReader
+{
+    {{~ for n in NullableNumericTypes ~}}
+    public Nullable{{ n.ClickhouseType }}ColumnReader ReadNullable{{ n.ClickhouseType }}Column()
+    {
+        if (_columnsRead >= _columnsCount)
+        {
+            throw new InvalidOperationException("No more columns available in this block.");
+        }
+
+        var name = ReadHeaderString();
+        var type = ReadHeaderString();
+        _columnsRead++;
+
+        if (!MatchesType(type, "Nullable({{ n.ClickhouseType }})"u8))
+        {
+            throw new InvalidOperationException(
+                $"Column type mismatch. Expected Nullable({{ n.ClickhouseType }}) for column '{Encoding.UTF8.GetString(name)}', but got '{Encoding.UTF8.GetString(type)}'.");
+        }
+
+        return Nullable{{ n.ClickhouseType }}ColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
+    }
+
+    public ref struct Nullable{{ n.ClickhouseType }}ColumnReader : ISequentialColumnReader<{{ n.CsharpType }}?>
+    {
+        private const int ValueSize = {{ n.ValueSizeInBytes }};
+        private readonly ReadOnlySpan<byte> _nullsMask;
+        private readonly ReadOnlySpan<byte> _data;
+        private int _valuesOffset;
+        private readonly int _rows;
+        private int _index;
+
+        private Nullable{{ n.ClickhouseType }}ColumnReader(
+            ReadOnlySpan<byte> nullsMask, ReadOnlySpan<byte> data, int valuesOffset, int rows)
+        {
+            _nullsMask = nullsMask;
+            _data = data;
+            _valuesOffset = valuesOffset;
+            _rows = rows;
+            _index = 0;
+        }
+
+        public int Length => _rows;
+        public bool HasMoreRows() => _index < _rows;
+
+        public static Nullable{{ n.ClickhouseType }}ColumnReader CreateAndConsume(
+            ReadOnlySpan<byte> data, scoped ref int offset, int rows)
+        {
+            if (offset + rows > data.Length) throw new IndexOutOfRangeException("nullable nulls out of range");
+            var mask = data.Slice(offset, rows);
+            var valuesStart = offset + rows;
+            var total = (long)rows * ValueSize;
+            if (valuesStart + total > data.Length) throw new IndexOutOfRangeException("nullable values out of range");
+            offset = valuesStart + (int)total;
+            return new Nullable{{ n.ClickhouseType }}ColumnReader(mask, data, valuesStart, rows);
+        }
+
+        public {{ n.CsharpType }}? ReadNext()
+        {
+            if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
+            var isNull = _nullsMask[_index] != 0;
+            var v = {{ n.SpanInterpretFunction }}(_data.Slice(_valuesOffset, ValueSize));
+            _valuesOffset += ValueSize;
+            _index++;
+            return isNull ? null : v;
+        }
+    }
+    {{~ end ~}}
+}
+
+public partial class NativeFormatBlockWriter
+{
+    {{~ for n in NullableNumericTypes ~}}
+    public Nullable{{ n.ClickhouseType }}ColumnWriter CreateNullable{{ n.ClickhouseType }}ColumnWriter(string columnName)
+    {
+        return Nullable{{ n.ClickhouseType }}ColumnWriter.Create(this, columnName, checked((int)_rowsCount));
+    }
+
+    public ref struct Nullable{{ n.ClickhouseType }}ColumnWriter : ISequentialColumnWriter<{{ n.CsharpType }}?, Nullable{{ n.ClickhouseType }}ColumnWriter>
+    {
+        private const int ValueSize = {{ n.ValueSizeInBytes }};
+        private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
+        private readonly int _rows;
+        private readonly int _maskLength;
+        private readonly byte[] _buffer;
+        private int _index;
+
+        private Nullable{{ n.ClickhouseType }}ColumnWriter(
+            ulong blockIndex, NativeFormatBlockWriter writer, int rows, byte[] buffer)
+        {
+            _blockIndex = blockIndex;
+            _writer = writer;
+            _rows = rows;
+            _maskLength = rows;
+            _buffer = buffer;
+            _index = 0;
+            _buffer.AsSpan(0, _maskLength + rows * ValueSize).Clear();
+            _writer.SetDataLength(_blockIndex, _maskLength);
+        }
+
+        internal static Nullable{{ n.ClickhouseType }}ColumnWriter Create(
+            NativeFormatBlockWriter writer, string columnName, int rows)
+        {
+            var totalSize = rows + rows * ValueSize;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalSize);
+            var blockIndex = writer.WriteColumnHeader(buffer, columnName, "Nullable({{ n.ClickhouseType }})", 0);
+            return new Nullable{{ n.ClickhouseType }}ColumnWriter(blockIndex, writer, rows, buffer);
+        }
+
+        public Nullable{{ n.ClickhouseType }}ColumnWriter WriteNext({{ n.CsharpType }}? value)
+        {
+            if (_index >= _rows) throw new InvalidOperationException("No more rows to write.");
+            if (value is null)
+            {
+                _buffer[_index] = 1;
+            }
+            else
+            {
+                _buffer[_index] = 0;
+                var dest = _buffer.AsSpan(_maskLength + _index * ValueSize, ValueSize);
+                {{~ if n.WriterValueStatements != null && n.WriterValueStatements.size > 0 ~}}
+{{~ for stmt in n.WriterValueStatements ~}}
+                {{ stmt }}
+{{~ end ~}}
+                {{~ end ~}}
+            }
+            _index++;
+            _writer.SetDataLength(_blockIndex, _maskLength + _index * ValueSize);
+            return this;
+        }
+
+        public NativeFormatBlockWriter WriteAll(IEnumerable<{{ n.CsharpType }}?> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var v in values) WriteNext(v);
+            return _writer;
+        }
+    }
+    {{~ end ~}}
+}

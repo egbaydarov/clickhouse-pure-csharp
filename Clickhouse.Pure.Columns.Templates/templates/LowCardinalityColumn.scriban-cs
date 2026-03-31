@@ -13,7 +13,7 @@ namespace Clickhouse.Pure.Columns;
 public partial class NativeFormatBlockReader
 {
     {{~ for n in LowCardinalityTypes ~}}
-    public LowCardinalityStringColumnReader ReadLowCardinalityStringColumn()
+    public LowCardinality{{ n.Suffix }}ColumnReader ReadLowCardinality{{ n.Suffix }}Column()
     {
         if (_columnsRead >= _columnsCount)
         {
@@ -24,50 +24,48 @@ public partial class NativeFormatBlockReader
         var type = ReadHeaderString();
         _columnsRead++;
 
-        if (!MatchesType(type, "LowCardinality(String)"u8))
+        if (!MatchesType(type, "{{ n.ClickhouseType }}"u8))
         {
             throw new InvalidOperationException(
-                $"Column type mismatch. Expected LowCardinality(String) for column '{Encoding.UTF8.GetString(name)}', but got '{Encoding.UTF8.GetString(type)}'.");
+                $"Column type mismatch. Expected {{ n.ClickhouseType }} for column '{Encoding.UTF8.GetString(name)}', but got '{Encoding.UTF8.GetString(type)}'.");
         }
 
-        return LowCardinalityStringColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
+        return LowCardinality{{ n.Suffix }}ColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
     }
 
-    public ref struct LowCardinalityStringColumnReader : ISequentialColumnReader<string>
+    public ref struct LowCardinality{{ n.Suffix }}ColumnReader : ISequentialColumnReader<{{ n.CsharpType }}>
     {
         private readonly string[] _dictionary;
         private readonly int _rows;
         private readonly int _keyWidthBytes; // 1, 2, 4, or 8
         private readonly ReadOnlySpan<byte> _keysData;
         private int _index;
+        {{~ if n.IsNullable ~}}
+        private readonly bool _isNullable;
+        {{~ end ~}}
 
-        private LowCardinalityStringColumnReader(string[] dictionary, ReadOnlySpan<byte> keysData, int rows,
-            int keyWidthBytes)
+        private LowCardinality{{ n.Suffix }}ColumnReader(string[] dictionary, ReadOnlySpan<byte> keysData, int rows,
+            int keyWidthBytes{{~ if n.IsNullable ~}}, bool isNullable{{~ end ~}})
         {
             _dictionary = dictionary;
             _rows = rows;
             _keysData = keysData;
             _keyWidthBytes = keyWidthBytes;
             _index = 0;
+            {{~ if n.IsNullable ~}}
+            _isNullable = isNullable;
+            {{~ end ~}}
         }
 
-        public static LowCardinalityStringColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset,
+        public static LowCardinality{{ n.Suffix }}ColumnReader CreateAndConsume(ReadOnlySpan<byte> data, scoped ref int offset,
             int rows)
         {
-            // Format per ClickHouse Native (see ch-go proto ColLowCardinality):
-            // meta:int64 (LE) with flags and key type
-            // indexRows:int64 (LE)
-            // index values: String[indexRows]
-            // keyRows:int64 (LE)
-            // keys: UInt{8|16|32|64}[keyRows]
-
             var local = offset;
 
             var first64 = ReadInt64Le(ref local, data);
             var meta = first64 == 1 ? ReadInt64Le(ref local, data) : first64;
 
-            // Bits
-            const long cardinalityKeyMask = 0xFF; // last byte
+            const long cardinalityKeyMask = 0xFF;
             const long cardinalityNeedGlobalDictionaryBit = 1L << 8;
             const long cardinalityHasAdditionalKeysBit = 1L << 9;
 
@@ -101,7 +99,7 @@ public partial class NativeFormatBlockReader
             {
                 var len = (int)ReadUVarInt(ref local, data);
                 if (local + len > data.Length) throw new IndexOutOfRangeException("lowcard dict value out of range");
-                dict[i] = Encoding.UTF8.GetString(data.Slice(local, len));
+                dict[i] = len == 0 ? string.Empty : Encoding.UTF8.GetString(data.Slice(local, len));
                 local += len;
             }
 
@@ -111,7 +109,6 @@ public partial class NativeFormatBlockReader
 
             if (keyRows != rows)
             {
-                // In practice should be equal; if not, keep using reported key rows
                 throw new IndexOutOfRangeException("lowcard dict value out of range");
             }
 
@@ -121,14 +118,14 @@ public partial class NativeFormatBlockReader
             local += keysBytesTotal;
 
             offset = local;
-            return new LowCardinalityStringColumnReader(dict, keysData, rows, width);
+            return new LowCardinality{{ n.Suffix }}ColumnReader(dict, keysData, rows, width{{~ if n.IsNullable ~}}, isNullable: true{{~ end ~}});
         }
 
         public int Length => _rows;
 
         public bool HasMoreRows() => _index < _rows;
 
-        public string ReadNext()
+        public {{ n.CsharpType }} ReadNext()
         {
             if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
             int key;
@@ -151,7 +148,11 @@ public partial class NativeFormatBlockReader
             _index++;
             if ((uint)key >= (uint)_dictionary.Length)
                 throw new IndexOutOfRangeException("lowcard key out of dict bounds");
+            {{~ if n.IsNullable ~}}
+            return key == 0 ? null : _dictionary[key];
+            {{~ else ~}}
             return _dictionary[key];
+            {{~ end ~}}
         }
     }
     {{~ end ~}}
@@ -160,15 +161,15 @@ public partial class NativeFormatBlockReader
 public partial class NativeFormatBlockWriter
 {
     {{~ for n in LowCardinalityTypes ~}}
-    public LowCardinalityStringColumnWriter CreateLowCardinalityStringColumnWriter(string columnName)
+    public LowCardinality{{ n.Suffix }}ColumnWriter CreateLowCardinality{{ n.Suffix }}ColumnWriter(string columnName)
     {
-        return LowCardinalityStringColumnWriter.Create(
+        return LowCardinality{{ n.Suffix }}ColumnWriter.Create(
             writer: this,
             columnName: columnName,
             rows: checked((int)_rowsCount));
     }
 
-    public ref struct LowCardinalityStringColumnWriter : ISequentialColumnWriter<{{ n.CsharpType }}, LowCardinalityStringColumnWriter>
+    public ref struct LowCardinality{{ n.Suffix }}ColumnWriter : ISequentialColumnWriter<{{ n.CsharpType }}, LowCardinality{{ n.Suffix }}ColumnWriter>
     {
         private NativeFormatBlockWriter _writer;
         private readonly int _rows;
@@ -181,7 +182,7 @@ public partial class NativeFormatBlockWriter
         private readonly ulong _blockIndex;
         private bool _encoded;
 
-        private LowCardinalityStringColumnWriter(
+        private LowCardinality{{ n.Suffix }}ColumnWriter(
             ulong blockIndex,
             NativeFormatBlockWriter writer,
             int rows,
@@ -197,15 +198,36 @@ public partial class NativeFormatBlockWriter
             _offset = 0;
             _index = 0;
             _encoded = false;
+            {{~ if n.IsNullable ~}}
+            _dictionary.Add(string.Empty); // index 0 is reserved for null
+            {{~ end ~}}
         }
 
-        public LowCardinalityStringColumnWriter WriteNext({{ n.CsharpType }} value)
+        public LowCardinality{{ n.Suffix }}ColumnWriter WriteNext({{ n.CsharpType }} value)
         {
             if (_index >= _rows)
             {
                 throw new InvalidOperationException("No more rows to write.");
             }
 
+            {{~ if n.IsNullable ~}}
+            if (value is null)
+            {
+                _keys[_index] = 0;
+            }
+            else
+            {
+                if (!_lookup.TryGetValue(value, out var key))
+                {
+                    key = _dictionary.Count;
+                    _dictionary.Add(value);
+                    _lookup[value] = key;
+                }
+                _keys[_index] = key;
+            }
+
+            _index++;
+            {{~ else ~}}
             if (!_lookup.TryGetValue(value, out var key))
             {
                 key = _dictionary.Count;
@@ -214,6 +236,7 @@ public partial class NativeFormatBlockWriter
             }
 
             _keys[_index++] = key;
+            {{~ end ~}}
 
             if (_index == _rows)
             {
@@ -234,7 +257,7 @@ public partial class NativeFormatBlockWriter
             return _writer;
         }
 
-        internal static LowCardinalityStringColumnWriter Create(
+        internal static LowCardinality{{ n.Suffix }}ColumnWriter Create(
             NativeFormatBlockWriter writer,
             string columnName,
             int rows)
@@ -243,10 +266,10 @@ public partial class NativeFormatBlockWriter
             var blockIndex = writer.WriteColumnHeader(
                 buffer: buffer,
                 columnName: columnName,
-                typeName: "LowCardinality(String)",
+                typeName: "{{ n.ClickhouseType }}",
                 dataLength: 0);
 
-            return new LowCardinalityStringColumnWriter(
+            return new LowCardinality{{ n.Suffix }}ColumnWriter(
                 blockIndex: blockIndex,
                 writer: writer,
                 rows: rows,
