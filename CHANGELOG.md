@@ -1,4 +1,11 @@
 ## Changelog
+<a name="2.3.5"></a>
+## [2.3.5](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.4...v2.3.5) (2026-03-31)
+
+### Not Important
+
+* no vuln check ([f1a4415](https://github.com/egbaydarov/clichouse-pure-csharp/commit/f1a4415918dd6f875861e7b21047f0cc5d7cc07c))
+
 <a name="2.3.4"></a>
 ## [2.3.4](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.3...v2.3.4) (2026-03-31)
 
