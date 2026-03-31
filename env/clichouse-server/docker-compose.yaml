@@ -6,10 +6,11 @@ services:
     environment:
       ALLOW_ANONYMOUS_LOGIN: "yes"
       ZOO_PORT_NUMBER: 2181
+      ZOO_4LW_COMMANDS_WHITELIST: "ruok"
     ports:
       - "2181:2181"
     healthcheck:
-      test: ["CMD-SHELL", "/apache-zookeeper-3.9.4-bin/bin/zkServer.sh status"]
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
       interval: 10s
       timeout: 10s
       retries: 6
