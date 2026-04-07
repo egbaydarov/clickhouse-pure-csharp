@@ -1,4 +1,11 @@
 ## Changelog
+<a name="2.3.7"></a>
+## [2.3.7](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.6...v2.3.7) (2026-04-07)
+
+### Not Important
+
+* support array types ([542ee06](https://github.com/egbaydarov/clichouse-pure-csharp/commit/542ee062ad2c6ad427b8bc0c8e9f3585e580c0d2))
+
 <a name="2.3.6"></a>
 ## [2.3.6](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.5...v2.3.6) (2026-03-31)
 
