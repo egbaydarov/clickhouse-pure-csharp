@@ -1363,6 +1363,87 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ArrayUInt16Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_arr_uint16_{Guid.NewGuid():N}";
+        var values = new[]
+        {
+            new ushort[] { 1, 2, 3 },
+            Array.Empty<ushort>(),
+            new ushort[] { 0, ushort.MaxValue },
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(UInt16)");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        var col = writer.CreateArrayUInt16ColumnWriter("Value");
+        foreach (var v in values) col.WriteNext(v);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName, static s => s);
+
+        fetched.Should().HaveCount(3);
+        fetched[0].Should().Be("[1,2,3]");
+        fetched[1].Should().Be("[]");
+        fetched[2].Should().Be("[0,65535]");
+    }
+
+    [Fact]
+    public async Task ArrayUInt32Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_arr_uint32_{Guid.NewGuid():N}";
+        var values = new[]
+        {
+            new uint[] { 1, 2, 3 },
+            Array.Empty<uint>(),
+            new uint[] { 0, uint.MaxValue },
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(UInt32)");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        var col = writer.CreateArrayUInt32ColumnWriter("Value");
+        foreach (var v in values) col.WriteNext(v);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName, static s => s);
+
+        fetched.Should().HaveCount(3);
+        fetched[0].Should().Be("[1,2,3]");
+        fetched[1].Should().Be("[]");
+        fetched[2].Should().Be("[0,4294967295]");
+    }
+
+    [Fact]
+    public async Task ArrayUInt64Column_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_arr_uint64_{Guid.NewGuid():N}";
+        var values = new[]
+        {
+            new ulong[] { 1, 2, 3 },
+            Array.Empty<ulong>(),
+            new ulong[] { 0, ulong.MaxValue },
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(UInt64)");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        var col = writer.CreateArrayUInt64ColumnWriter("Value");
+        foreach (var v in values) col.WriteNext(v);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName, static s => s);
+
+        fetched.Should().HaveCount(3);
+        fetched[0].Should().Be("[1,2,3]");
+        fetched[1].Should().Be("[]");
+        fetched[2].Should().Be("[0,18446744073709551615]");
+    }
+
+    [Fact]
     public async Task LowCardinalityNullableStringColumn_RoundTripsNativeBlock()
     {
         _tableName = $"default.native_lowcard_nullable_{Guid.NewGuid():N}";

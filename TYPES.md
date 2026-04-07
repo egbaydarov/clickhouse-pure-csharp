@@ -46,5 +46,8 @@
 * `Decimal(P, S)` → one of the above depending on precision `P` ([ClickHouse Decimal docs](https://clickhouse.com/docs/sql-reference/data-types/decimal))
 
 ## Array Encodings
+* `Array(UInt16)` → `ushort[]`
+* `Array(UInt32)` → `uint[]`
+* `Array(UInt64)` → `ulong[]`
 * `Array(Nullable(String))` → `string?[]`
 * `Array(Nullable(UInt32))` → `uint?[]`

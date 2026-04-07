@@ -65,6 +65,19 @@ public record class ArrayNullableColumnVariant(
     }
 }
 
+public record class ArrayColumnVariant(
+    string ClickhouseType,
+    string InnerCsharpType,
+    string Suffix,
+    int ValueSizeInBytes,
+    string SpanReadFunction,
+    string WriteStatement)
+{
+    public ArrayColumnVariant() : this("", "", "", 0, "", "")
+    {
+    }
+}
+
 public record class FixedStringColumnVariant(
     int Size)
 {

@@ -1425,6 +1425,87 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ArrayUInt16Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_arr_uint16_{Guid.NewGuid():N}";
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(UInt16)");
+        await _sut.InsertCsvAsync(_tableName, new[]
+        {
+            "\"[1,2,3]\"",
+            "\"[]\"",
+            "\"[0,65535]\"",
+        });
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadArrayUInt16Column();
+            var result = new List<ushort[]>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().HaveCount(3);
+        actual[0].Should().Equal((ushort)1, (ushort)2, (ushort)3);
+        actual[1].Should().BeEmpty();
+        actual[2].Should().Equal((ushort)0, ushort.MaxValue);
+    }
+
+    [Fact]
+    public async Task ArrayUInt32Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_arr_uint32_{Guid.NewGuid():N}";
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(UInt32)");
+        await _sut.InsertCsvAsync(_tableName, new[]
+        {
+            "\"[1,2,3]\"",
+            "\"[]\"",
+            "\"[0,4294967295]\"",
+        });
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadArrayUInt32Column();
+            var result = new List<uint[]>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().HaveCount(3);
+        actual[0].Should().Equal(1u, 2u, 3u);
+        actual[1].Should().BeEmpty();
+        actual[2].Should().Equal(0u, uint.MaxValue);
+    }
+
+    [Fact]
+    public async Task ArrayUInt64Column_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_arr_uint64_{Guid.NewGuid():N}";
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(UInt64)");
+        await _sut.InsertCsvAsync(_tableName, new[]
+        {
+            "\"[1,2,3]\"",
+            "\"[]\"",
+            "\"[0,18446744073709551615]\"",
+        });
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadArrayUInt64Column();
+            var result = new List<ulong[]>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().HaveCount(3);
+        actual[0].Should().Equal(1UL, 2UL, 3UL);
+        actual[1].Should().BeEmpty();
+        actual[2].Should().Equal(0UL, ulong.MaxValue);
+    }
+
+    [Fact]
     public async Task LowCardinalityNullableStringColumn_ReadsNativeBlock()
     {
         _tableName = $"default.native_read_lowcard_nullable_{Guid.NewGuid():N}";

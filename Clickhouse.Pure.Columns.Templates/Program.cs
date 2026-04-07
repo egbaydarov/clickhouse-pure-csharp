@@ -330,6 +330,37 @@ internal static class Program
                 },
             };
 
+            var arrays = new[]
+            {
+                new ArrayColumnVariant
+                {
+                    ClickhouseType = "Array(UInt16)",
+                    InnerCsharpType = "ushort",
+                    Suffix = "UInt16",
+                    ValueSizeInBytes = 2,
+                    SpanReadFunction = "BinaryPrimitives.ReadUInt16LittleEndian",
+                    WriteStatement = "BinaryPrimitives.WriteUInt16LittleEndian(dest, allValues[i]);",
+                },
+                new ArrayColumnVariant
+                {
+                    ClickhouseType = "Array(UInt32)",
+                    InnerCsharpType = "uint",
+                    Suffix = "UInt32",
+                    ValueSizeInBytes = 4,
+                    SpanReadFunction = "BinaryPrimitives.ReadUInt32LittleEndian",
+                    WriteStatement = "BinaryPrimitives.WriteUInt32LittleEndian(dest, allValues[i]);",
+                },
+                new ArrayColumnVariant
+                {
+                    ClickhouseType = "Array(UInt64)",
+                    InnerCsharpType = "ulong",
+                    Suffix = "UInt64",
+                    ValueSizeInBytes = 8,
+                    SpanReadFunction = "BinaryPrimitives.ReadUInt64LittleEndian",
+                    WriteStatement = "BinaryPrimitives.WriteUInt64LittleEndian(dest, allValues[i]);",
+                },
+            };
+
             var lowCardinality = new[]
             {
                 new LowCardinalityColumnVariant
@@ -399,6 +430,12 @@ internal static class Program
                 new TemplateJob(
                     TemplatePath: $"{TemplatesDir}/ArrayNullableColumn.scriban-cs",
                     Model: new { ArrayNullableTypes = arrayNullable },
+                    OutputPath: $"{OutDir}/NativeFormat.ArrayNullableColumns.generated.cs",
+                    SuccessMessage: "Wrote NativeFormat.ArrayNullableColumns.generated.cs"),
+
+                new TemplateJob(
+                    TemplatePath: $"{TemplatesDir}/ArrayColumn.scriban-cs",
+                    Model: new { ArrayTypes = arrays },
                     OutputPath: $"{OutDir}/NativeFormat.ArrayColumns.generated.cs",
                     SuccessMessage: "Wrote NativeFormat.ArrayColumns.generated.cs"),
             };

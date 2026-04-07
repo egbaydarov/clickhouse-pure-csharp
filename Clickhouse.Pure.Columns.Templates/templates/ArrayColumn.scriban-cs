@@ -1,0 +1,192 @@
+#nullable enable
+using System;
+using System.Buffers;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+
+namespace Clickhouse.Pure.Columns;
+
+public partial class NativeFormatBlockReader
+{
+    {{~ for n in ArrayTypes ~}}
+    public Array{{ n.Suffix }}ColumnReader ReadArray{{ n.Suffix }}Column()
+    {
+        if (_columnsRead >= _columnsCount)
+        {
+            throw new InvalidOperationException("No more columns available in this block.");
+        }
+
+        var name = ReadHeaderString();
+        var type = ReadHeaderString();
+        _columnsRead++;
+
+        if (!MatchesType(type, "{{ n.ClickhouseType }}"u8))
+        {
+            throw new InvalidOperationException(
+                $"Column type mismatch. Expected {{ n.ClickhouseType }} for column '{System.Text.Encoding.UTF8.GetString(name)}', but got '{System.Text.Encoding.UTF8.GetString(type)}'.");
+        }
+
+        return Array{{ n.Suffix }}ColumnReader.CreateAndConsume(_buffer.Span, ref _offset, (int)_rowsCount);
+    }
+
+    public ref struct Array{{ n.Suffix }}ColumnReader : ISequentialColumnReader<{{ n.InnerCsharpType }}[]>
+    {
+        private const int ValueSize = {{ n.ValueSizeInBytes }};
+        private readonly long[] _offsets;
+        private readonly {{ n.InnerCsharpType }}[] _values;
+        private readonly int _rows;
+        private int _index;
+
+        private Array{{ n.Suffix }}ColumnReader(long[] offsets, {{ n.InnerCsharpType }}[] values, int rows)
+        {
+            _offsets = offsets;
+            _values = values;
+            _rows = rows;
+            _index = 0;
+        }
+
+        public int Length => _rows;
+        public bool HasMoreRows() => _index < _rows;
+
+        public static Array{{ n.Suffix }}ColumnReader CreateAndConsume(
+            ReadOnlySpan<byte> data, scoped ref int offset, int rows)
+        {
+            var local = offset;
+
+            if (local + rows * 8 > data.Length) throw new IndexOutOfRangeException("array offsets out of range");
+            var offsets = new long[rows];
+            for (var i = 0; i < rows; i++)
+            {
+                offsets[i] = (long)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(local, 8));
+                local += 8;
+            }
+
+            var totalElements = rows > 0 ? (int)offsets[rows - 1] : 0;
+
+            if (local + totalElements * ValueSize > data.Length) throw new IndexOutOfRangeException("array inner values out of range");
+            var values = new {{ n.InnerCsharpType }}[totalElements];
+            for (var i = 0; i < totalElements; i++)
+            {
+                values[i] = {{ n.SpanReadFunction }}(data.Slice(local, ValueSize));
+                local += ValueSize;
+            }
+
+            offset = local;
+            return new Array{{ n.Suffix }}ColumnReader(offsets, values, rows);
+        }
+
+        public {{ n.InnerCsharpType }}[] ReadNext()
+        {
+            if (_index >= _rows) throw new IndexOutOfRangeException("no more values");
+            var start = _index == 0 ? 0 : (int)_offsets[_index - 1];
+            var end = (int)_offsets[_index];
+            _index++;
+
+            var result = new {{ n.InnerCsharpType }}[end - start];
+            Array.Copy(_values, start, result, 0, result.Length);
+            return result;
+        }
+    }
+    {{~ end ~}}
+}
+
+public partial class NativeFormatBlockWriter
+{
+    {{~ for n in ArrayTypes ~}}
+    public Array{{ n.Suffix }}ColumnWriter CreateArray{{ n.Suffix }}ColumnWriter(string columnName)
+    {
+        return Array{{ n.Suffix }}ColumnWriter.Create(this, columnName, checked((int)_rowsCount));
+    }
+
+    public ref struct Array{{ n.Suffix }}ColumnWriter : ISequentialColumnWriter<{{ n.InnerCsharpType }}[], Array{{ n.Suffix }}ColumnWriter>
+    {
+        private const int ValueSize = {{ n.ValueSizeInBytes }};
+        private NativeFormatBlockWriter _writer;
+        private readonly ulong _blockIndex;
+        private readonly int _rows;
+        private readonly List<{{ n.InnerCsharpType }}[]> _collected;
+        private byte[] _buffer;
+        private int _index;
+        private bool _encoded;
+
+        private Array{{ n.Suffix }}ColumnWriter(
+            ulong blockIndex, NativeFormatBlockWriter writer, int rows, byte[] buffer)
+        {
+            _blockIndex = blockIndex;
+            _writer = writer;
+            _rows = rows;
+            _collected = new List<{{ n.InnerCsharpType }}[]>(rows);
+            _buffer = buffer;
+            _index = 0;
+            _encoded = false;
+        }
+
+        internal static Array{{ n.Suffix }}ColumnWriter Create(NativeFormatBlockWriter writer, string columnName, int rows)
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(Math.Max(1024, rows * 16));
+            var blockIndex = writer.WriteColumnHeader(buffer, columnName, "{{ n.ClickhouseType }}", 0);
+            return new Array{{ n.Suffix }}ColumnWriter(blockIndex, writer, rows, buffer);
+        }
+
+        public Array{{ n.Suffix }}ColumnWriter WriteNext({{ n.InnerCsharpType }}[] value)
+        {
+            if (_index >= _rows) throw new InvalidOperationException("No more rows to write.");
+            _collected.Add(value);
+            _index++;
+
+            if (_index == _rows) EncodeIfNecessary();
+            return this;
+        }
+
+        public NativeFormatBlockWriter WriteAll(IEnumerable<{{ n.InnerCsharpType }}[]> values)
+        {
+            if (values is null) throw new ArgumentNullException(nameof(values));
+            foreach (var v in values) WriteNext(v);
+            return _writer;
+        }
+
+        private void EncodeIfNecessary()
+        {
+            if (_encoded) return;
+
+            var offsets = new long[_rows];
+            long cumulative = 0;
+            for (var i = 0; i < _rows; i++)
+            {
+                cumulative += _collected[i].Length;
+                offsets[i] = cumulative;
+            }
+            var totalElements = (int)cumulative;
+
+            var allValues = new {{ n.InnerCsharpType }}[totalElements];
+            var pos = 0;
+            for (var i = 0; i < _rows; i++)
+            {
+                var arr = _collected[i];
+                Array.Copy(arr, 0, allValues, pos, arr.Length);
+                pos += arr.Length;
+            }
+
+            var offset = 0;
+
+            _buffer = _writer.EnsureCapacity(_blockIndex, offset, offset + _rows * 8);
+            for (var i = 0; i < _rows; i++)
+            {
+                BinaryPrimitives.WriteUInt64LittleEndian(_buffer.AsSpan(offset, 8), (ulong)offsets[i]);
+                offset += 8;
+            }
+
+            _buffer = _writer.EnsureCapacity(_blockIndex, offset, offset + totalElements * ValueSize);
+            for (var i = 0; i < totalElements; i++)
+            {
+                var dest = _buffer.AsSpan(offset, ValueSize);
+                {{ n.WriteStatement }}
+                offset += ValueSize;
+            }
+
+            _encoded = true;
+            _writer.SetDataLength(_blockIndex, offset);
+        }
+    }
+    {{~ end ~}}
+}
