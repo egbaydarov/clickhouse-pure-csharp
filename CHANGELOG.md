@@ -1,4 +1,11 @@
 ## Changelog
+<a name="2.3.9"></a>
+## [2.3.9](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.8...v2.3.9) (2026-04-28)
+
+### Not Important
+
+* add callbacks (error, and query status) ([895852b](https://github.com/egbaydarov/clichouse-pure-csharp/commit/895852b5642c9395e3222ac9fbe7bb5c298f09ee))
+
 <a name="2.3.8"></a>
 ## [2.3.8](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.7...v2.3.8) (2026-04-07)
 
