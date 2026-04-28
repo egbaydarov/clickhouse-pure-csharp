@@ -328,6 +328,8 @@ public sealed class CompressingCallHandler : IDisposable
         string query,
         string? database = null,
         string? sessionId = null,
+        Action<ReadProgress>? onProgress = null,
+        Action<ReadError>? onError = null,
         Dictionary<string,string>? settings = null)
     {
         var call = _router.Call<AsyncServerStreamingCall<Result>>(
@@ -370,7 +372,9 @@ public sealed class CompressingCallHandler : IDisposable
                 asyncResultReader: new GrpcCall(
                     asyncResultReader: asyncResultReader,
                     asyncDuplexResultReader: null),
-                error: null);
+                error: null,
+                onException: onError,
+                onProgress: onProgress);
 
         }
         catch (System.Exception ex)
@@ -381,7 +385,9 @@ public sealed class CompressingCallHandler : IDisposable
                 {
                     ClickhouseException = null,
                     Exception = ex,
-                });
+                },
+                onException: onError,
+                onProgress: onProgress);
         }
     }
 
