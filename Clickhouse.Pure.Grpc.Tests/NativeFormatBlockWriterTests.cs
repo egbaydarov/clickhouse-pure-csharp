@@ -1363,6 +1363,60 @@ public class NativeFormatBlockWriterTests  : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ArrayTupleStringStringColumn_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_arr_tuple_str_str_{Guid.NewGuid():N}";
+        var values = new[]
+        {
+            new[] { ("EN", "hello"), ("ES", "hola, 'amigo'") },
+            Array.Empty<(string, string)>(),
+            new[] { ("", "multi\nline\ttext") },
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(Tuple(String, String))");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        var col = writer.CreateArrayTupleStringStringColumnWriter("Value");
+        foreach (var v in values) col.WriteNext(v);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName, static s => s);
+
+        fetched.Should().HaveCount(3);
+        fetched[0].Should().Be("[('EN','hello'),('ES','hola, \\'amigo\\'')]");
+        fetched[1].Should().Be("[]");
+        fetched[2].Should().Be("[('','multi\\nline\\ttext')]");
+    }
+
+    [Fact]
+    public async Task ArrayTupleStringStringColumn_NamedElements_RoundTripsNativeBlock()
+    {
+        _tableName = $"default.native_arr_named_tuple_str_str_{Guid.NewGuid():N}";
+        var values = new[]
+        {
+            new[] { ("EN", "hello"), ("ES", "hola") },
+            Array.Empty<(string, string)>(),
+            new[] { ("DE", "hallo") },
+        };
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(Tuple(Language String, Text String))");
+
+        using var writer = new NativeFormatBlockWriter(columnsCount: 1, rowsCount: values.Length);
+        var col = writer.CreateArrayTupleStringStringColumnWriter("Value", "Language", "Text");
+        foreach (var v in values) col.WriteNext(v);
+
+        await _sut.InsertNativePayloadAsync(_tableName, writer.GetWrittenBuffer());
+
+        var fetched = await _sut.FetchCsvColumnAsync(_tableName, static s => s);
+
+        fetched.Should().HaveCount(3);
+        fetched[0].Should().Be("[('EN','hello'),('ES','hola')]");
+        fetched[1].Should().Be("[]");
+        fetched[2].Should().Be("[('DE','hallo')]");
+    }
+
+    [Fact]
     public async Task ArrayUInt16Column_RoundTripsNativeBlock()
     {
         _tableName = $"default.native_arr_uint16_{Guid.NewGuid():N}";

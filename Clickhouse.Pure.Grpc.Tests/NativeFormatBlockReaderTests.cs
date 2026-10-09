@@ -1425,6 +1425,33 @@ public class NativeFormatBlockReaderTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ArrayTupleStringStringColumn_ReadsNativeBlock()
+    {
+        _tableName = $"default.native_read_arr_tuple_str_str_{Guid.NewGuid():N}";
+
+        await _sut.CreateSingleColumnTableAsync(_tableName, "Array(Tuple(Language String, Text String))");
+        await _sut.InsertCsvAsync(_tableName, new[]
+        {
+            "\"[('EN','hello'),('ES','hola')]\"",
+            "\"[]\"",
+            "\"[('','only')]\"",
+        });
+
+        var actual = await ReadColumnAsync($"SELECT Value FROM {_tableName}", static reader =>
+        {
+            var column = reader.ReadArrayTupleStringStringColumn();
+            var result = new List<(string, string)[]>(column.Length);
+            while (column.HasMoreRows()) result.Add(column.ReadNext());
+            return result;
+        });
+
+        actual.Should().HaveCount(3);
+        actual[0].Should().Equal(("EN", "hello"), ("ES", "hola"));
+        actual[1].Should().BeEmpty();
+        actual[2].Should().Equal(("", "only"));
+    }
+
+    [Fact]
     public async Task ArrayUInt16Column_ReadsNativeBlock()
     {
         _tableName = $"default.native_read_arr_uint16_{Guid.NewGuid():N}";

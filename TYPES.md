@@ -44,6 +44,7 @@
 * `Decimal256(S)` → `Decimal256Value`
 * `Nullable(Decimal128(S))` → `Decimal128Value?`
 * `Decimal(P, S)` → one of the above depending on precision `P` ([ClickHouse Decimal docs](https://clickhouse.com/docs/sql-reference/data-types/decimal))
+* `Decimal128Value.Parse("123.45", scale)` / `TryParse` build a value from a decimal string (rounds half away from zero to `scale`)
 
 ## Array Encodings
 * `Array(UInt16)` → `ushort[]`
@@ -51,3 +52,4 @@
 * `Array(UInt64)` → `ulong[]`
 * `Array(Nullable(String))` → `string?[]`
 * `Array(Nullable(UInt32))` → `uint?[]`
+* `Array(Tuple(String, String))` → `(string, string)[]` (named elements supported, e.g. `Array(Tuple(Language String, Text String))`)
