@@ -1,4 +1,11 @@
 ## Changelog
+<a name="2.4.0"></a>
+## [2.4.0](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.9...v2.4.0) (2026-10-09)
+
+### ✨ Features
+
+* support more types ([712e30e](https://github.com/egbaydarov/clichouse-pure-csharp/commit/712e30eabb874651a71093f4d8b50c46ef2e89fb))
+
 <a name="2.3.9"></a>
 ## [2.3.9](https://github.com/egbaydarov/clichouse-pure-csharp/compare/v2.3.8...v2.3.9) (2026-04-28)
 
